@@ -3,53 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Gravity Intel V10.5</title>
+    <title>Gravity Intel V10.6</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap');
         :root { --accent: #00f2ff; --bg: #050505; --active: #00ff88; --error: #ff3333; }
-        body { font-family: 'JetBrains Mono', monospace; background: var(--bg); color: var(--accent); margin: 0; overflow: hidden; height: 100vh; }
-        .page { display: none; height: calc(100vh - 90px); width: 100vw; flex-direction: column; overflow-y: auto; }
+        body { font-family: 'JetBrains Mono', monospace; background: var(--bg); color: var(--accent); margin: 0; overflow: hidden; height: 100vh; padding-top: env(safe-area-inset-top); }
+        
+        /* NEW TOP STATUS BAR */
+        .status-bar { height: 30px; background: #111; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #222; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+        .gps-active { color: var(--active); }
+        .gps-searching { color: var(--error); animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+
+        .page { display: none; height: calc(100vh - 120px); width: 100vw; flex-direction: column; overflow-y: auto; }
         .active-page { display: flex; }
-        .nav-bar { position: fixed; bottom: 0; width: 100%; height: 90px; background: #000; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #222; z-index: 1000; }
+        .nav-bar { position: fixed; bottom: 0; width: 100%; height: 90px; background: #000; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #222; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
         .nav-btn { display: flex; align-items: center; justify-content: center; opacity: 0.3; font-size: 10px; font-weight: 800; border: none; background: none; color: inherit; }
         .nav-btn-active { opacity: 1; color: var(--accent); border-top: 2px solid var(--accent); }
-        #timer-display { font-size: 26vw; font-weight: 800; color: white; line-height: 1; }
-        .safe-mode-overlay { position: fixed; inset: 0; background: black; z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; }
-        .gps-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+        
+        #timer-display { font-size: 26vw; font-weight: 800; color: white; line-height: 1; text-shadow: 0 0 20px rgba(255,255,255,0.2); }
         .map-tiles { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
-        .locate-btn { position: absolute; bottom: 110px; right: 20px; z-index: 2000; background: black; border: 2px solid var(--accent); color: var(--accent); padding: 12px; border-radius: 50%; }
     </style>
 </head>
 <body>
 
-    <div id="safe-mode" class="safe-mode-overlay">
+    <div class="status-bar" id="status-line">
+        <span id="gps-status-text" class="gps-searching">SATELLITE: OFFLINE</span>
+    </div>
+
+    <div id="safe-mode" class="fixed inset-0 bg-black z-[9999] hidden flex-col items-center justify-center">
         <h2 class="text-lg font-black tracking-widest text-white uppercase">Safe Mode</h2>
+        <p class="text-[10px] text-zinc-500 mt-2">SPEED > 15 KM/H</p>
     </div>
 
     <div id="page-dash" class="page active-page p-6 justify-center">
-        <div class="flex justify-between items-center mb-4">
-            <div class="flex items-center">
-                <span id="gps-dot" class="gps-indicator bg-zinc-700"></span>
-                <span class="text-[8px] uppercase font-bold text-zinc-500">GPS Signal</span>
-            </div>
-            <button onclick="resetTrip()" class="text-[8px] border border-zinc-700 px-2 py-1 rounded text-zinc-500 uppercase">New Trip</button>
+        <div class="flex justify-end mb-4">
+            <button onclick="resetTrip()" class="text-[8px] border border-zinc-700 px-2 py-1 rounded text-zinc-500 uppercase">Reset Trip</button>
         </div>
 
         <div id="trip-recap-ui" class="hidden mb-6 p-4 bg-zinc-900/80 border border-zinc-700 rounded-lg text-center">
             <span id="trip-grade" class="text-5xl font-black text-white">--</span>
-            <div class="text-[8px] opacity-40 uppercase mt-1">Current Efficiency Grade</div>
+            <div class="text-[8px] opacity-40 uppercase mt-1">Efficiency Grade</div>
         </div>
 
         <div class="grid grid-cols-2 gap-4 mb-8">
             <div class="bg-zinc-900/50 p-3 rounded border border-zinc-800">
-                <span class="text-[8px] opacity-40 uppercase">Stop Efficiency</span>
+                <span class="text-[8px] opacity-40 uppercase">Stop Score</span>
                 <div id="obj-score" class="text-xl font-black text-white">--</div>
             </div>
             <div class="bg-zinc-900/50 p-3 rounded border border-zinc-800">
-                <span class="text-[8px] opacity-40 uppercase">Trip Average</span>
+                <span class="text-[8px] opacity-40 uppercase">Trip Avg</span>
                 <div id="avg-wait" class="text-xl font-black text-white">--</div>
             </div>
         </div>
@@ -58,16 +64,13 @@
             <div id="speed-val" class="text-4xl font-black opacity-10 mb-2">0</div>
             <div id="timer-display">0.0</div>
             <button id="master-start" onclick="toggleSystem()" class="mt-10 px-10 py-4 border-2 border-cyan-400 rounded-full font-black text-xs tracking-[0.2em] uppercase">
-                Start System
+                Initialize System
             </button>
         </div>
     </div>
 
     <div id="page-map" class="page relative">
         <div id="map-canvas" style="height: 100%; width: 100%; background: #000;"></div>
-        <button onclick="locateUser()" class="locate-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
-        </button>
     </div>
 
     <div id="page-history" class="page p-6">
@@ -81,31 +84,29 @@
 
     <nav class="nav-bar">
         <button onclick="tab('dash')" id="tab-dash" class="nav-btn nav-btn-active">DASH</button>
-        <button onclick="tab('map')" id="tab-map" class="nav-btn">HEATMAP</button>
+        <button onclick="tab('map')" id="tab-map" class="nav-btn">MAP</button>
         <button onclick="tab('history')" id="tab-history" class="nav-btn">LOGS</button>
-        <button onclick="location.reload()" class="nav-btn text-red-700 uppercase">Reset</button>
+        <button onclick="location.reload()" class="nav-btn text-red-700">RESET</button>
     </nav>
 
     <script>
-        const DB_KEY = 'GRV_DB_PRO_105';
+        const DB_KEY = 'GRV_DB_PRO_106';
         let storage = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
         let tripData = []; 
         let isStopped = false, isArmed = false, startMark = 0, timerInterval = null, lastPos = null;
         let mapInstance = null, markerLayer = null;
         let stopCount = 0;
 
-        function playTone(freq = 440, type = 'sine', duration = 0.1) {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, ctx.currentTime);
-            gain.gain.setValueAtTime(0.1, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + duration);
+        function playTone(freq = 440, duration = 0.1) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(); osc.stop(ctx.currentTime + duration);
+            } catch(e) {}
         }
 
         function speak(text) {
@@ -117,23 +118,29 @@
         function toggleSystem() {
             if (!isArmed) {
                 isArmed = true;
-                document.getElementById('master-start').innerText = "System Active";
-                document.getElementById('master-start').style.borderColor = "var(--active)";
-                navigator.geolocation.watchPosition(handleGPS, () => {
-                    document.getElementById('gps-dot').style.backgroundColor = "var(--error)";
+                document.getElementById('master-start').style.display = 'none';
+                document.getElementById('gps-status-text').innerText = "SATELLITE: SEARCHING...";
+                
+                navigator.geolocation.watchPosition(handleGPS, (err) => {
+                    document.getElementById('gps-status-text').innerText = "SATELLITE: ERROR";
+                    document.getElementById('gps-status-text').className = "gps-searching";
                 }, { enableHighAccuracy: true });
-                playTone(880, 'sine', 0.2);
+                playTone(880, 0.2);
             }
         }
 
         function handleGPS(pos) {
             lastPos = [pos.coords.latitude, pos.coords.longitude];
-            document.getElementById('gps-dot').style.backgroundColor = "var(--active)";
+            
+            // Update GPS HUD
+            const statusText = document.getElementById('gps-status-text');
+            statusText.innerText = `SATELLITE: LOCKED (${pos.coords.accuracy.toFixed(0)}m)`;
+            statusText.className = "gps-active";
+
             const speed = (pos.coords.speed || 0) * 3.6;
             document.getElementById('speed-val').innerText = Math.round(speed);
             document.getElementById('safe-mode').style.display = speed > 15 ? 'flex' : 'none';
 
-            // Filter out Jitter: Speed must be < 1.0 for at least 1.5s
             if (speed < 1.0 && !isStopped && isArmed) {
                 isStopped = true;
                 startMark = Date.now();
@@ -143,23 +150,19 @@
             } 
             else if (speed > 5 && isStopped) {
                 const dur = (Date.now() - startMark) / 1000;
-                if (dur > 1.5) { // Valid Stop
+                if (dur > 2.0) { // Require 2s stop to prevent "random" ratings
                     isStopped = false;
                     clearInterval(timerInterval);
                     const score = Math.min(10, (100 / dur) * 2).toFixed(1);
                     const entry = { d: dur, ts: Date.now(), lat: lastPos[0], lng: lastPos[1], obj: score };
-                    storage.push(entry);
-                    tripData.push(entry);
+                    storage.push(entry); tripData.push(entry);
                     localStorage.setItem(DB_KEY, JSON.stringify(storage));
                     
                     stopCount++;
                     updateDashUI(score);
-                    
-                    // Reduced voice callouts: Tone every time, Voice every 5th
-                    playTone(660, 'triangle', 0.3);
-                    if (stopCount % 5 === 0) speak(`Efficiency ${score}`);
+                    playTone(600, 0.2);
+                    if (stopCount % 5 === 0) speak(`Score ${score}`);
                 } else {
-                    // It was likely just a slow-roll or jitter
                     isStopped = false;
                     clearInterval(timerInterval);
                     document.getElementById('timer-display').innerText = "0.0";
@@ -202,23 +205,20 @@
         function renderHistory() {
             const list = document.getElementById('history-list');
             const lifeAvgBox = document.getElementById('stats-header');
-            
             if (storage.length >= 3) {
                 const totalDur = storage.reduce((a, b) => a + b.d, 0);
                 document.getElementById('life-avg').innerText = (totalDur / storage.length).toFixed(1) + "s";
                 lifeAvgBox.classList.remove('hidden');
             }
-
             list.innerHTML = storage.slice().reverse().map(h => `
-                <div class="flex justify-between border-b border-zinc-800 pb-2">
-                    <span class="opacity-40">${new Date(h.ts).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <div class="flex justify-between border-b border-zinc-800 py-3">
+                    <span class="opacity-40 uppercase">${new Date(h.ts).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                     <span class="font-bold text-white">${h.d.toFixed(1)}s</span>
                     <span class="${h.obj > 7 ? 'text-green-400' : 'text-red-400'}">${h.obj}</span>
                 </div>
             `).join('');
         }
 
-        function locateUser() { if (lastPos && mapInstance) mapInstance.setView(lastPos, 16); }
         function resetTrip() { tripData = []; document.getElementById('trip-recap-ui').classList.add('hidden'); }
     </script>
 </body>
