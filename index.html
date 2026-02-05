@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Gravity Intel V10.6</title>
+    <title>Gravity Intel V10.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,19 +11,15 @@
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap');
         :root { --accent: #00f2ff; --bg: #050505; --active: #00ff88; --error: #ff3333; }
         body { font-family: 'JetBrains Mono', monospace; background: var(--bg); color: var(--accent); margin: 0; overflow: hidden; height: 100vh; padding-top: env(safe-area-inset-top); }
-        
-        /* NEW TOP STATUS BAR */
         .status-bar { height: 30px; background: #111; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #222; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
         .gps-active { color: var(--active); }
         .gps-searching { color: var(--error); animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.3; } }
-
         .page { display: none; height: calc(100vh - 120px); width: 100vw; flex-direction: column; overflow-y: auto; }
         .active-page { display: flex; }
         .nav-bar { position: fixed; bottom: 0; width: 100%; height: 90px; background: #000; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #222; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
         .nav-btn { display: flex; align-items: center; justify-content: center; opacity: 0.3; font-size: 10px; font-weight: 800; border: none; background: none; color: inherit; }
         .nav-btn-active { opacity: 1; color: var(--accent); border-top: 2px solid var(--accent); }
-        
         #timer-display { font-size: 26vw; font-weight: 800; color: white; line-height: 1; text-shadow: 0 0 20px rgba(255,255,255,0.2); }
         .map-tiles { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
     </style>
@@ -40,8 +36,10 @@
     </div>
 
     <div id="page-dash" class="page active-page p-6 justify-center">
-        <div class="flex justify-end mb-4">
-            <button onclick="resetTrip()" class="text-[8px] border border-zinc-700 px-2 py-1 rounded text-zinc-500 uppercase">Reset Trip</button>
+        <div id="local-intel" class="mb-4 text-center opacity-0 transition-opacity duration-500">
+            <span class="text-[10px] bg-cyan-900/30 border border-cyan-500/50 px-3 py-1 rounded-full text-cyan-400 font-bold uppercase tracking-tighter">
+                Area Match: <span id="local-avg-val">0.0</span>s Avg
+            </span>
         </div>
 
         <div id="trip-recap-ui" class="hidden mb-6 p-4 bg-zinc-900/80 border border-zinc-700 rounded-lg text-center">
@@ -90,12 +88,26 @@
     </nav>
 
     <script>
-        const DB_KEY = 'GRV_DB_PRO_106';
+        const DB_KEY = 'GRV_DB_PRO_106'; // Keeping your data from 10.6
         let storage = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
         let tripData = []; 
         let isStopped = false, isArmed = false, startMark = 0, timerInterval = null, lastPos = null;
         let mapInstance = null, markerLayer = null;
         let stopCount = 0;
+
+        // Haversine formula to find distance between two points in meters
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
 
         function playTone(freq = 440, duration = 0.1) {
             try {
@@ -109,30 +121,17 @@
             } catch(e) {}
         }
 
-        function speak(text) {
-            if (!window.speechSynthesis) return;
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-        }
-
         function toggleSystem() {
             if (!isArmed) {
                 isArmed = true;
                 document.getElementById('master-start').style.display = 'none';
-                document.getElementById('gps-status-text').innerText = "SATELLITE: SEARCHING...";
-                
-                navigator.geolocation.watchPosition(handleGPS, (err) => {
-                    document.getElementById('gps-status-text').innerText = "SATELLITE: ERROR";
-                    document.getElementById('gps-status-text').className = "gps-searching";
-                }, { enableHighAccuracy: true });
+                navigator.geolocation.watchPosition(handleGPS, null, { enableHighAccuracy: true });
                 playTone(880, 0.2);
             }
         }
 
         function handleGPS(pos) {
             lastPos = [pos.coords.latitude, pos.coords.longitude];
-            
-            // Update GPS HUD
             const statusText = document.getElementById('gps-status-text');
             statusText.innerText = `SATELLITE: LOCKED (${pos.coords.accuracy.toFixed(0)}m)`;
             statusText.className = "gps-active";
@@ -144,15 +143,26 @@
             if (speed < 1.0 && !isStopped && isArmed) {
                 isStopped = true;
                 startMark = Date.now();
+                
+                // Check for Geofence Match
+                const nearby = storage.filter(p => getDistance(lastPos[0], lastPos[1], p.lat, p.lng) < 30);
+                if (nearby.length > 0) {
+                    const localAvg = nearby.reduce((a,b) => a + b.d, 0) / nearby.length;
+                    document.getElementById('local-avg-val').innerText = localAvg.toFixed(1);
+                    document.getElementById('local-intel').style.opacity = "1";
+                }
+
                 timerInterval = setInterval(() => {
                     document.getElementById('timer-display').innerText = ((Date.now() - startMark)/1000).toFixed(1);
                 }, 100);
             } 
             else if (speed > 5 && isStopped) {
                 const dur = (Date.now() - startMark) / 1000;
-                if (dur > 2.0) { // Require 2s stop to prevent "random" ratings
+                if (dur > 2.0) {
                     isStopped = false;
                     clearInterval(timerInterval);
+                    document.getElementById('local-intel').style.opacity = "0";
+                    
                     const score = Math.min(10, (100 / dur) * 2).toFixed(1);
                     const entry = { d: dur, ts: Date.now(), lat: lastPos[0], lng: lastPos[1], obj: score };
                     storage.push(entry); tripData.push(entry);
@@ -161,11 +171,17 @@
                     stopCount++;
                     updateDashUI(score);
                     playTone(600, 0.2);
-                    if (stopCount % 5 === 0) speak(`Score ${score}`);
+                    if (stopCount % 5 === 0) {
+                        if (window.speechSynthesis) {
+                            window.speechSynthesis.cancel();
+                            window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Score ${score}`));
+                        }
+                    }
                 } else {
                     isStopped = false;
                     clearInterval(timerInterval);
                     document.getElementById('timer-display').innerText = "0.0";
+                    document.getElementById('local-intel').style.opacity = "0";
                 }
             }
         }
