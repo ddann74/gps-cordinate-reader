@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Gravity Intel V10.9</title>
+    <title>Gravity Intel V11.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,7 +14,6 @@
         
         .status-bar { height: 35px; background: #111; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #222; font-size: 10px; font-weight: 800; }
         .gps-active { color: var(--active); }
-        .gps-warn { color: var(--warn); }
         .gps-searching { color: var(--error); animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.3; } }
         
@@ -27,6 +26,7 @@
         .nav-btn-active { opacity: 1; color: var(--accent); border-top: 2px solid var(--accent); }
         
         #timer-display { font-size: 26vw; font-weight: 800; color: white; line-height: 1; text-shadow: 0 0 30px rgba(0,242,255,0.2); }
+        .map-tiles { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(85%); }
     </style>
 </head>
 <body>
@@ -41,7 +41,6 @@
                 Area Match: <span id="local-avg-val">0.0</span>s Avg
             </span>
         </div>
-
         <div class="grid grid-cols-2 gap-4 mb-8">
             <div class="bg-zinc-900/40 p-3 rounded border border-zinc-800">
                 <span class="text-[8px] opacity-40 uppercase">Stop Score</span>
@@ -52,13 +51,10 @@
                 <div id="avg-wait" class="text-xl font-black text-white">--</div>
             </div>
         </div>
-
-        <div class="text-center relative">
+        <div class="text-center">
             <div id="speed-val" class="text-4xl font-black opacity-10 mb-2">0</div>
             <div id="timer-display">0.0</div>
-            <button id="master-start" onclick="toggleSystem()" class="mt-10 px-10 py-4 border-2 border-cyan-400 rounded-full font-black text-xs uppercase tracking-widest">
-                Start Engine
-            </button>
+            <button id="master-start" onclick="toggleSystem()" class="mt-10 px-10 py-4 border-2 border-cyan-400 rounded-full font-black text-xs uppercase tracking-widest">Initialize</button>
         </div>
     </div>
 
@@ -74,21 +70,50 @@
         <div id="history-list" class="space-y-2"></div>
     </div>
 
+    <div id="page-about" class="page p-8">
+        <div class="mb-8">
+            <h1 class="text-white text-xl font-black italic">GRAVITY INTEL</h1>
+            <p class="text-[10px] opacity-50 uppercase tracking-widest">Performance Stop Tracker</p>
+        </div>
+
+        <div class="space-y-6">
+            <div class="border-l-2 border-cyan-500 pl-4">
+                <div class="text-[8px] opacity-40 uppercase">Build Version</div>
+                <div class="text-lg font-bold text-white">V11.0_PRO</div>
+            </div>
+            <div class="border-l-2 border-zinc-800 pl-4">
+                <div class="text-[8px] opacity-40 uppercase">System Time</div>
+                <div id="sys-clock" class="text-lg font-bold text-white">00:00:00</div>
+            </div>
+            <div class="border-l-2 border-zinc-800 pl-4">
+                <div class="text-[8px] opacity-40 uppercase">Calendar Date</div>
+                <div id="sys-date" class="text-lg font-bold text-white">--/--/--</div>
+            </div>
+            <div class="pt-10">
+                <button onclick="location.reload()" class="w-full py-4 border border-red-900 text-red-500 text-[10px] font-black uppercase tracking-[0.3em]">Full System Reboot</button>
+            </div>
+        </div>
+    </div>
+
     <nav class="nav-bar">
         <button onclick="tab('dash')" id="tab-dash" class="nav-btn nav-btn-active">DASH</button>
         <button onclick="tab('map')" id="tab-map" class="nav-btn">MAP</button>
         <button onclick="tab('history')" id="tab-history" class="nav-btn">LOGS</button>
-        <button onclick="location.reload()" class="nav-btn text-red-900">REBOOT</button>
+        <button onclick="tab('about')" id="tab-about" class="nav-btn">SYSTEM</button>
     </nav>
 
     <script>
         const DB_KEY = 'GRV_DB_PRO_106';
-        let storage = [];
-        try { storage = JSON.parse(localStorage.getItem(DB_KEY) || '[]'); } catch(e) { storage = []; }
-        
-        let tripData = []; 
-        let isStopped = false, isArmed = false, startMark = 0, timerInterval = null, lastPos = null;
+        let storage = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+        let tripData = [], isStopped = false, isArmed = false, startMark = 0, timerInterval = null, lastPos = null;
         let mapInstance = null, markerLayer = null;
+
+        // Clock Logic
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('sys-clock').innerText = now.toLocaleTimeString();
+            document.getElementById('sys-date').innerText = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }, 1000);
 
         function tab(n) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active-page'));
@@ -101,19 +126,11 @@
 
         function initMap() {
             if (!mapInstance) {
-                // Default to 0,0 if no GPS yet to prevent crash
-                const startAt = lastPos || [0, 0];
-                mapInstance = L.map('map-canvas', { zoomControl: false, attributionControl: false }).setView(startAt, 15);
+                mapInstance = L.map('map-canvas', { zoomControl: false, attributionControl: false }).setView(lastPos || [0,0], 15);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapInstance);
                 markerLayer = L.layerGroup().addTo(mapInstance);
             }
-            
-            // Force re-render of map tiles
-            setTimeout(() => { 
-                mapInstance.invalidateSize(); 
-                if(lastPos) mapInstance.setView(lastPos, 15);
-            }, 200);
-
+            setTimeout(() => { mapInstance.invalidateSize(); if(lastPos) mapInstance.panTo(lastPos); }, 200);
             markerLayer.clearLayers();
             storage.forEach(p => {
                 const color = p.obj > 7 ? '#00ff88' : p.obj > 4 ? '#ffff00' : '#ff3333';
@@ -133,38 +150,26 @@
             if (!isArmed) {
                 isArmed = true;
                 document.getElementById('master-start').style.display = 'none';
-                document.getElementById('gps-status-text').innerText = "SEARCHING FOR SATELLITES...";
-                navigator.geolocation.watchPosition(handleGPS, (err) => {
-                    document.getElementById('gps-status-text').innerText = "GPS ERROR: ENABLE LOCATION";
-                }, { enableHighAccuracy: true });
+                navigator.geolocation.watchPosition(handleGPS, null, { enableHighAccuracy: true });
             }
         }
 
         function handleGPS(pos) {
             lastPos = [pos.coords.latitude, pos.coords.longitude];
-            const acc = pos.coords.accuracy;
-            const statusEl = document.getElementById('gps-status-text');
-            
-            // HUD Update
-            statusEl.innerText = `GPS: LOCKED (±${acc.toFixed(0)}m)`;
-            statusEl.className = acc > 25 ? "gps-warn" : "gps-active";
-            
+            document.getElementById('gps-status-text').innerText = `GPS: LOCKED (±${pos.coords.accuracy.toFixed(0)}m)`;
+            document.getElementById('gps-status-text').className = "gps-active";
             const speed = (pos.coords.speed || 0) * 3.6;
             document.getElementById('speed-val').innerText = Math.round(speed);
 
-            // Auto-Timer Logic
             if (speed < 1.0 && !isStopped && isArmed) {
                 isStopped = true;
                 startMark = Date.now();
-                
-                // Geofence Check
-                const nearby = storage.filter(p => getDistance(lastPos[0], lastPos[1], p.lat, p.lng) < 35);
+                const nearby = storage.filter(p => getDistance(lastPos[0], lastPos[1], p.lat, p.lng) < 30);
                 if (nearby.length > 0) {
                     const localAvg = nearby.reduce((a,b) => a + b.d, 0) / nearby.length;
                     document.getElementById('local-avg-val').innerText = localAvg.toFixed(1);
                     document.getElementById('local-intel').style.opacity = "1";
                 }
-                
                 timerInterval = setInterval(() => {
                     document.getElementById('timer-display').innerText = ((Date.now() - startMark)/1000).toFixed(1);
                 }, 100);
@@ -174,7 +179,6 @@
                 isStopped = false;
                 clearInterval(timerInterval);
                 document.getElementById('local-intel').style.opacity = "0";
-
                 if (dur > 2.5) {
                     const score = Math.min(10, (100 / dur) * 2).toFixed(1);
                     storage.push({ d: dur, ts: Date.now(), lat: lastPos[0], lng: lastPos[1], obj: score });
