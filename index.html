@@ -3,58 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Scanner Reset</title>
+    <title>GPS Scanner - Large Map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        :root { --accent: #00ff00; --danger: #ff4444; }
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Camera Window */
-        #video-container { position: relative; height: 40vh; background: #111; border-bottom: 2px solid #444; }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        /* 1. SMALLER CAMERA AREA (25% of screen) */
+        #video-container { position: relative; height: 25vh; background: #111; border-bottom: 2px solid #444; }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
         
-        /* The Red Box (AI View) - Now at the bottom for visibility */
-        #debug-canvas { 
-            position: absolute; bottom: 10px; right: 10px; 
-            width: 160px; height: 50px; 
-            border: 3px solid red; z-index: 999; background: #222; 
-        }
-
-        /* Overlay */
+        /* Focus Box adjusted for smaller height */
         .focus-box { 
             position: absolute; top: 50%; left: 50%; 
             transform: translate(-50%, -50%);
-            width: 250px; height: 60px; border: 2px solid #0f0; 
+            width: 280px; height: 50px; border: 2px solid var(--accent);
+            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.6);
         }
 
-        /* Map and Panel */
-        #map { height: 40vh; width: 100%; }
-        #controls { height: 20vh; padding: 10px; background: #222; display: flex; flex-direction: column; gap: 10px; }
-        
-        .row { display: flex; gap: 10px; align-items: center; }
-        button { flex: 1; padding: 15px; font-weight: bold; background: #0f0; border: none; border-radius: 5px; cursor: pointer; }
-        #manualBtn { background: #ff4444; color: #fff; }
-        #status-bar { font-size: 12px; color: #0f0; background: #000; padding: 5px; }
+        /* 2. SYSTEM STATUS BAR */
+        #status-bar { font-size: 11px; color: var(--accent); background: #111; padding: 5px 10px; border-bottom: 1px solid #333; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* 3. LARGER MAP AREA (Remaining space) */
+        #map-wrap { position: relative; flex-grow: 1; }
+        #map { width: 100%; height: 100%; }
+
+        /* THE RED AI BOX (Floating on Map) */
+        #debug-canvas { 
+            position: absolute; top: 10px; right: 10px; 
+            width: 140px; height: 45px; 
+            border: 2px solid var(--danger); z-index: 1000; background: #000; 
+        }
+
+        /* 4. CONTROL PANEL */
+        #controls { padding: 10px; background: #222; border-top: 2px solid #444; }
+        .row { display: flex; gap: 8px; }
+        button { flex: 1; padding: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        #manualBtn { background: var(--danger); color: #fff; }
+        #dlBtn { background: #444; color: #fff; }
+        #coords { margin-top: 8px; text-align: center; font-family: monospace; color: var(--accent); font-size: 14px; }
     </style>
 </head>
 <body>
 
     <div id="video-container">
         <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="debug-canvas"></canvas>
         <div class="focus-box"></div>
     </div>
 
-    <div id="status-bar">System: Initializing...</div>
+    <div id="status-bar">AI Status: Scanning...</div>
+
+    <div id="map-wrap">
+        <canvas id="debug-canvas"></canvas>
+        <div id="map"></div>
+    </div>
 
     <div id="controls">
         <div class="row">
-            <button id="manualBtn">LOCK NOW</button>
-            <button id="dlBtn">SAVE CSV</button>
+            <button id="manualBtn">LOCK COORDS</button>
+            <button id="dlBtn">SAVE CSV (0)</button>
         </div>
-        <div id="coords" style="text-align:center; font-family: monospace;">--- Waiting ---</div>
+        <div id="coords">SIGNAL SEARCHING...</div>
     </div>
-
-    <div id="map"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
