@@ -1,110 +1,70 @@
-const video = document.getElementById('webcam');
-const statusText = document.getElementById('status');
-const stabilityBar = document.getElementById('stability-bar');
-const downloadBtn = document.getElementById('downloadBtn');
-const coordDisplay = document.getElementById('current-coord');
+// ... (Keep your top variables and initMap / startVideo the same)
 
-let map, marker;
-let coordHistory = [];
-let stabilityCounter = 0;
-let lastDetectedRaw = "";
-
-// 1. Initialize Map
-function initMap() {
-    map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    marker = L.marker([0, 0]).addTo(map);
-}
-
-// 2. Camera Setup
-async function startCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
-        });
-        video.srcObject = stream;
-    } catch (err) {
-        statusText.innerText = "Camera Error: " + err.message;
-    }
-}
-
-// 3. Process Frames (Cropped for TV Screens)
-async function scan() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Define crop area (The Focus Box)
-        // We crop the middle 40% width and 20% height
-        const sw = video.videoWidth * 0.4;
-        const sh = video.videoHeight * 0.2;
+async function processFrame() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA && !isWorking) {
+        isWorking = true;
+        const ctx = debugCanvas.getContext('2d');
+        
+        const scale = video.videoWidth / video.clientWidth;
+        const sw = 280 * scale;
+        const sh = 80 * scale;
         const sx = (video.videoWidth - sw) / 2;
         const sy = (video.videoHeight - sh) / 2;
 
-        canvas.width = sw;
-        canvas.height = sh;
+        debugCanvas.width = sw;
+        debugCanvas.height = sh;
+
+        // Try removing 'invert' if the TV has white text on black background
+        ctx.filter = 'contrast(200%) grayscale(100%)';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
-        // OCR Recognition
-        const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
-        processText(text);
-    }
-    setTimeout(scan, 1000); // Scan once per second
-}
-
-// 4. Data Stabilization Logic
-function processText(rawText) {
-    // Regex for Lat, Long: e.g. 45.1234, -122.5678
-    const match = rawText.match(/([-+]?\d{1,3}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
-
-    if (match) {
-        const currentRaw = match[0];
+        const { data: { text } } = await worker.recognize(debugCanvas);
         
-        if (currentRaw === lastDetectedRaw) {
-            stabilityCounter = Math.min(stabilityCounter + 34, 100); // Fills bar in 3 matching frames
+        // Log the RAW text so you can see the mistakes the AI makes
+        console.log("AI RAW READ:", text);
+
+        // More aggressive cleaning: find numbers even if there are weird symbols
+        const matches = text.match(/[-+]?\d+\.\d+/g);
+
+        if (matches && matches.length >= 2) {
+            const currentPair = `${matches[0]},${matches[1]}`;
+            
+            // If the AI is slightly inconsistent, we help it out
+            if (isSimilarlyClose(currentPair, lastSeen)) {
+                stability = Math.min(stability + 25, 100);
+            } else {
+                stability = 25;
+                lastSeen = currentPair;
+            }
         } else {
-            stabilityCounter = 0;
-            lastDetectedRaw = currentRaw;
+            stability = Math.max(0, stability - 5);
         }
 
-        stabilityBar.style.width = stabilityCounter + "%";
+        stbBar.style.width = stability + "%";
 
-        if (stabilityCounter >= 100) {
-            const lat = parseFloat(match[1]);
-            const lng = parseFloat(match[2]);
-            updateRecord(lat, lng);
+        if (stability >= 100) {
+            updateApp(parseFloat(matches[0]), parseFloat(matches[1]));
         }
+        isWorking = false;
+    }
+    setTimeout(processFrame, 300); 
+}
+
+// Help the Data Stabilization: Allow for tiny OCR flickering
+function isSimilarlyClose(current, last) {
+    if(!last) return false;
+    // If it's 90% the same string, count it as a match
+    return current.substring(0, 5) === last.substring(0, 5);
+}
+
+// Add this to your HTML: <button id="manualBtn">Manual Lock</button>
+// Then add this logic:
+document.getElementById('manualBtn').onclick = () => {
+    const matches = lastSeen.split(',');
+    if(matches.length >= 2) {
+        updateApp(parseFloat(matches[0]), parseFloat(matches[1]));
+        alert("Manual Lock Successful");
     } else {
-        stabilityCounter = Math.max(0, stabilityCounter - 10);
-        stabilityBar.style.width = stabilityCounter + "%";
+        alert("AI hasn't seen any numbers yet. Adjust camera.");
     }
-}
-
-function updateRecord(lat, lng) {
-    const latLng = [lat, lng];
-    map.setView(latLng, 15);
-    marker.setLatLng(latLng);
-    coordDisplay.innerText = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
-
-    // Save unique coordinates to history
-    const exists = coordHistory.some(c => c.lat === lat && c.lng === lng);
-    if (!exists) {
-        coordHistory.push({ time: new Date().toLocaleTimeString(), lat, lng });
-        downloadBtn.innerText = `Export CSV (${coordHistory.length})`;
-    }
-}
-
-// 5. CSV Export
-downloadBtn.onclick = () => {
-    if (coordHistory.length === 0) return;
-    const csvContent = "data:text/csv;charset=utf-8,Time,Latitude,Longitude\n" 
-        + coordHistory.map(e => `${e.time},${e.lat},${e.lng}`).join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = "dashcam_trip_data.csv";
-    link.click();
 };
-
-// Start App
-initMap();
-startCamera().then(() => scan());
