@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPS Scanner - Thumb Pro</title>
+    <title>GPS Scanner - High Sensitivity</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00ff00; --danger: #ff4444; --bg: #000; }
@@ -11,57 +11,46 @@
         
         body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Camera Section */
-        #video-container { position: relative; height: 25vh; background: #111; border-bottom: 2px solid #444; z-index: 5; }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.9; }
+        /* Camera Area - 35% height for better visibility */
+        #video-container { position: relative; height: 35vh; background: #111; border-bottom: 2px solid var(--accent); z-index: 5; }
+        video { width: 100%; height: 100%; object-fit: cover; }
         
+        /* Larger Focus Box */
         .focus-box { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 280px; height: 60px; border: 2px solid var(--accent);
-            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.6);
+            width: 300px; height: 100px; border: 3px solid var(--accent);
+            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.5);
         }
 
         #status-bar { font-size: 11px; color: var(--accent); background: #111; padding: 6px 12px; border-bottom: 1px solid #333; z-index: 10; font-weight: bold; }
 
-        /* Map Section */
+        /* Map Area */
         #map-wrap { position: relative; flex-grow: 1; overflow: hidden; }
         #map { width: 100%; height: 100%; z-index: 1; }
 
-        /* AI Debug Box (Red) */
+        /* AI Preview (The Red Box) */
         #debug-canvas { 
             position: absolute; top: 10px; right: 10px; 
-            width: 140px; height: 45px; 
+            width: 150px; height: 50px; 
             border: 2px solid var(--danger); z-index: 1000; background: #000; 
         }
 
-        /* Floating Thumb Button */
+        /* Thumb Button */
         #manualBtn { 
-            position: absolute; 
-            left: 20px; 
-            bottom: 25%; 
-            width: 90px; 
-            height: 90px; 
-            background: var(--danger); 
-            color: white; 
-            border: 4px solid #fff; 
-            border-radius: 50%; 
-            font-weight: bold; 
-            z-index: 9999; 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-            cursor: pointer;
-            touch-action: manipulation;
+            position: absolute; left: 20px; bottom: 20%; 
+            width: 85px; height: 85px; background: var(--danger); 
+            color: white; border: 4px solid #fff; border-radius: 50%; 
+            font-weight: bold; z-index: 9999; display: flex;
+            align-items: center; justify-content: center; text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); touch-action: manipulation;
         }
         #manualBtn:active { transform: scale(0.9); background: #cc0000; }
 
-        /* HUD Control Bar */
+        /* HUD */
         #controls { padding: 10px; background: #222; border-top: 2px solid #444; z-index: 10; }
-        #raw-debug { font-size: 10px; color: #888; text-align: center; margin-bottom: 5px; font-family: monospace; }
+        #raw-debug { font-size: 10px; color: #888; text-align: center; margin-bottom: 5px; height: 15px; overflow: hidden; }
         #coords { text-align: center; font-family: monospace; color: var(--accent); font-size: 18px; margin-bottom: 10px; min-height: 24px; }
-        #dlBtn { width: 100%; padding: 15px; background: #444; color: white; border: none; border-radius: 8px; font-weight: bold; }
+        #dlBtn { width: 100%; padding: 12px; background: #444; color: white; border: none; border-radius: 8px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -71,7 +60,7 @@
         <div class="focus-box"></div>
     </div>
 
-    <div id="status-bar">SYSTEM: INITIALIZING...</div>
+    <div id="status-bar">SYSTEM: STARTING...</div>
 
     <div id="map-wrap">
         <canvas id="debug-canvas"></canvas>
@@ -80,7 +69,7 @@
     </div>
 
     <div id="controls">
-        <div id="raw-debug">AI SEEING: ---</div>
+        <div id="raw-debug">AI READ: ---</div>
         <div id="coords">WAITING FOR SIGNAL</div>
         <button id="dlBtn">SAVE CSV (0)</button>
     </div>
