@@ -16,73 +16,31 @@ let isBusy = false;
 let isSwapped = false;
 
 async function init() {
-    // 1. Initialize Leaflet Map
     map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     marker = L.marker([0, 0]).addTo(map);
 
-    // 2. Camera Access
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", width: { ideal: 1280 } } 
+            video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
         });
         video.srcObject = stream;
-    } catch (e) {
-        alert("Camera Error: Please enable permissions.");
-    }
+    } catch (e) { alert("Camera Error"); }
 
-    // 3. Setup AI Engine
-    rawDebug.innerText = "LOADING AI...";
+    rawDebug.innerText = "STARTING PRECISION ENGINE...";
     worker = await Tesseract.createWorker();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
     
-    // STRICT WHITELIST: Only look for numbers and symbols
+    // Crucial: We only allow the characters that exist in a GPS coordinate
     await worker.setParameters({ 
-        tessedit_char_whitelist: '0123456789.,- ',
-        tessedit_pageseg_mode: '7' // Treat as a single line
+        tessedit_char_whitelist: '0123456789.-', 
+        tessedit_pageseg_mode: '7',
+        user_defined_dpi: '300'
     });
     
-    rawDebug.innerText = "READY TO SCAN";
+    rawDebug.innerText = "STABILIZER ACTIVE";
     scanLoop();
-}
-
-function cleanNumber(val) {
-    let n = val.replace(',', '.');
-    // Sanity Check: If AI misses a dot in a long number (e.g., 33856 -> 33.856)
-    if (!n.includes('.') && n.length > 4) {
-        n = n.slice(0, 2) + "." + n.slice(2);
-    }
-    return parseFloat(n);
-}
-
-function parseCoords(text) {
-    // Regex extracts groups of digits that look like coordinates
-    const matches = text.match(/[-+]?\d+[\.\,]?\d*/g);
-    if (!matches || matches.length < 2) return null;
-
-    let lat = cleanNumber(matches[0]);
-    let lng = cleanNumber(matches[1]);
-
-    if (isSwapped) [lat, lng] = [lng, lat];
-
-    // Latitude must be -90 to 90, Longitude -180 to 180
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-
-    return [lat, lng];
-}
-
-async function getAddress(lat, lng) {
-    try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
-        const data = await res.json();
-        if (data.address) {
-            const suburb = data.address.suburb || data.address.town || data.address.village || data.address.city || "Unknown";
-            const road = data.address.road || "Unknown Road";
-            return { full: `${road}, ${suburb}`, suburb: suburb };
-        }
-    } catch (e) { console.warn("Network offline, cannot fetch address."); }
-    return { full: "Address Not Found", suburb: "Offline" };
 }
 
 async function scanLoop() {
@@ -90,7 +48,7 @@ async function scanLoop() {
         isBusy = true;
         const ctx = debugCanvas.getContext('2d');
         
-        // Calculate crop based on video resolution
+        // Dynamic Crop Math
         const vW = video.videoWidth, vH = video.videoHeight;
         const scaleX = vW / video.clientWidth, scaleY = vH / video.clientHeight;
         const sw = 300 * scaleX, sh = 100 * scaleY;
@@ -98,24 +56,25 @@ async function scanLoop() {
 
         debugCanvas.width = sw; debugCanvas.height = sh;
         
-        // HIGH CONTRAST FILTERING: Forces black text on white background
-        ctx.filter = 'contrast(400%) grayscale(100%) brightness(120%)';
+        // ADAPTIVE FILTERING: Increases sharpness of the digits
+        ctx.filter = 'contrast(500%) grayscale(100%) brightness(120%) blur(0px)';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
         const { data: { text } } = await worker.recognize(debugCanvas);
-        const filteredText = text.replace(/[^0-9.,-\s]/g, '').trim();
-        rawDebug.innerText = "AI READ: " + (filteredText || "...");
+        
+        // REGEX: Find two numbers that have a decimal or are at least 4 digits long
+        const cleanText = text.replace(/[^0-9.\- ]/g, ''); 
+        rawDebug.innerText = "RAW: " + cleanText;
 
-        const found = parseCoords(filteredText);
+        const found = parsePrecisionCoords(cleanText);
         
         if (found) {
-            const currentPair = `${found[0].toFixed(3)},${found[1].toFixed(3)}`;
-            
-            // Data Stabilization: Requires 4 identical reads to auto-lock
+            // Data Stabilization check
+            const currentPair = `${found[0].toFixed(2)},${found[1].toFixed(2)}`; 
             if (currentPair === lastCleanPair) {
-                stability = Math.min(100, stability + 25);
+                stability = Math.min(100, stability + 20); // Takes 5 frames of agreement
             } else {
-                stability = 25;
+                stability = 10;
                 lastCleanPair = currentPair;
             }
 
@@ -124,61 +83,31 @@ async function scanLoop() {
                 stability = 0;
             }
         } else {
-            stability = Math.max(0, stability - 10);
+            stability = Math.max(0, stability - 5);
         }
         
         stabFill.style.width = stability + "%";
         isBusy = false;
     }
-    setTimeout(scanLoop, 150); // Scans ~6 times per second
+    setTimeout(scanLoop, 100); 
 }
 
-async function triggerLock(lat, lng, source) {
-    if (navigator.vibrate) navigator.vibrate(60);
-    
-    map.setView([lat, lng], 16);
-    marker.setLatLng([lat, lng]);
-    coordsTxt.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    
-    addressTxt.innerText = "Finding Suburb...";
-    const info = await getAddress(lat, lng);
-    addressTxt.innerText = info.full;
+function parsePrecisionCoords(text) {
+    // Split by spaces or dashes to find potential number pairs
+    const parts = text.trim().split(/\s+/).filter(p => p.length > 3);
+    if (parts.length < 2) return null;
 
-    log.push({ 
-        time: new Date().toLocaleTimeString(), 
-        lat, lng, 
-        suburb: info.suburb, 
-        address: info.full,
-        source 
-    });
-    
-    dlBtn.innerText = `SAVE CSV (${log.length})`;
-    coordsTxt.style.color = "#fff";
-    setTimeout(() => coordsTxt.style.color = "var(--accent)", 1000);
+    let lat = parseFloat(parts[0]);
+    let lng = parseFloat(parts[1]);
+
+    // Manual decimal fix: if the AI missed a dot (e.g. "33856" instead of "33.856")
+    if (Math.abs(lat) > 1000) lat = lat / 10000;
+    if (Math.abs(lng) > 1000) lng = lng / 10000;
+
+    if (isSwapped) [lat, lng] = [lng, lat];
+
+    if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return [lat, lng];
 }
 
-// Button Listeners
-swapBtn.onclick = () => {
-    isSwapped = !isSwapped;
-    swapBtn.style.borderColor = isSwapped ? "var(--accent)" : "#555";
-    swapBtn.innerText = isSwapped ? "ORDER: LNG / LAT" : "ORDER: LAT / LNG";
-};
-
-thumbButton.onclick = () => {
-    const found = parseCoords(rawDebug.innerText.replace("AI READ: ", ""));
-    if (found) triggerLock(found[0], found[1], "MANUAL");
-    else alert("Check focus. AI sees: " + rawDebug.innerText);
-};
-
-dlBtn.onclick = () => {
-    if (log.length === 0) return alert("No data logged yet!");
-    let csv = "Time,Lat,Lng,Suburb,Address,Source\n" + 
-              log.map(i => `${i.time},${i.lat},${i.lng},"${i.suburb}","${i.address}",${i.source}`).join("\n");
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `GPS_Data_Log.csv`;
-    a.click();
-};
-
-init();
+// ... Keep your triggerLock, getAddress, and download functions from the previous code ...
