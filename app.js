@@ -3,18 +3,20 @@ const status = document.getElementById('status-bar');
 const debugCanvas = document.getElementById('debug-canvas');
 const coordsTxt = document.getElementById('coords');
 const dlBtn = document.getElementById('dlBtn');
+const thumbButton = document.getElementById('manualBtn');
 
 let map, marker, worker;
 let log = [];
 let stability = 0;
-let lastResult = "";
+let lastResultText = ""; // Full text for manual lock
+let lastCleanPair = ""; // Pair for auto-lock logic
 let isBusy = false;
 
-async function start() {
-    // 1. Initialize Map
-    map = L.map('map').setView([0, 0], 2);
+async function init() {
+    // 1. Setup Map
+    map = L.map('map', { zoomControl: false }).setView([-25.27, 133.77], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    marker = L.marker([0, 0]).addTo(map);
+    marker = L.marker([-25.27, 133.77]).addTo(map);
 
     // 2. Start Camera
     try {
@@ -23,101 +25,112 @@ async function start() {
         });
         video.srcObject = stream;
     } catch (e) {
-        status.innerText = "System: Camera Error";
+        status.innerText = "SYSTEM: CAMERA ACCESS DENIED";
     }
 
-    // 3. Start AI
-    status.innerText = "System: Loading AI...";
+    // 3. Init AI
+    status.innerText = "SYSTEM: LOADING AI ENGINE...";
     worker = await Tesseract.createWorker();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
     await worker.setParameters({ tessedit_char_whitelist: '0123456789.,- ' });
-    status.innerText = "System: AI Active - Point at Coordinates";
-    scan();
+    status.innerText = "SYSTEM: READY - QR MODE ACTIVE";
+    
+    requestAnimationFrame(scanLoop);
 }
 
-async function scan() {
+async function scanLoop() {
     if (video.readyState === video.HAVE_ENOUGH_DATA && !isBusy) {
         isBusy = true;
         const ctx = debugCanvas.getContext('2d');
         
-        // Crop logic (matches the green focus box)
+        // Match the focus-box crop
         const scale = video.videoWidth / video.clientWidth;
         const sw = 280 * scale;
-        const sh = 50 * scale;
+        const sh = 60 * scale;
         const sx = (video.videoWidth - sw) / 2;
         const sy = (video.videoHeight - sh) / 2;
 
         debugCanvas.width = sw;
         debugCanvas.height = sh;
 
-        // Visual enhancement for the AI
+        // Enhance for OCR
         ctx.filter = 'contrast(200%) grayscale(100%) brightness(110%)';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
         const { data: { text } } = await worker.recognize(debugCanvas);
-        
-        // The QR-Reader Logic: Find 2 decimal numbers
+        lastResultText = text; // Save for the Manual Thumb Button
+
         const matches = text.match(/[-+]?\d+\.\d+/g);
 
         if (matches && matches.length >= 2) {
-            const currentStr = `${matches[0]},${matches[1]}`;
+            const currentPair = `${matches[0]},${matches[1]}`;
             
-            // If the AI is seeing the same numbers consistently...
-            if (currentStr === lastResult) {
-                stability += 34; // Takes ~3 consistent frames to lock
+            // Auto-Lock Logic (Stability)
+            if (currentPair === lastCleanPair) {
+                stability += 34; // 3 frames to 100%
             } else {
                 stability = 34;
-                lastResult = currentStr;
+                lastCleanPair = currentPair;
             }
         } else {
-            stability = Math.max(0, stability - 10); // Fade stability if view is lost
+            stability = Math.max(0, stability - 10);
         }
 
-        // Visual Feedback
+        // Update UI
         if (stability >= 100) {
-            autoLock(parseFloat(matches[0]), parseFloat(matches[1]));
-            stability = 0; // Reset for next scan
-        } else if (stability > 0) {
-            status.innerText = `System: Stabilizing... ${stability}%`;
-            status.style.color = "#ffff00"; // Yellow while thinking
+            triggerLock(parseFloat(matches[0]), parseFloat(matches[1]), "AUTO");
+            stability = 0;
         } else {
-            status.innerText = "System: Searching for Signal...";
-            status.style.color = "#00ff00";
+            status.innerText = stability > 0 ? `STABILIZING: ${stability}%` : "SYSTEM: SEARCHING...";
+            status.style.color = stability > 0 ? "#ffff00" : "#00ff00";
         }
 
         isBusy = false;
     }
-    setTimeout(scan, 200); // Fast scanning (5 times per second)
+    setTimeout(scanLoop, 200);
 }
 
-function autoLock(lat, lng) {
-    // Update Map
+// THE LOCK FUNCTION (Used by Auto and Manual)
+function triggerLock(lat, lng, source) {
     const pos = [lat, lng];
-    map.setView(pos, 14);
+    map.setView(pos, 15);
     marker.setLatLng(pos);
     
-    // UI Feedback
-    coordsTxt.innerText = `LOCKED: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    coordsTxt.style.background = "#00ff00";
-    coordsTxt.style.color = "#000";
-    status.innerText = "System: SUCCESSFUL LOCK";
+    coordsTxt.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    status.innerText = `SYSTEM: ${source} LOCK SUCCESS`;
     
-    // Reset background after a second
-    setTimeout(() => {
-        coordsTxt.style.background = "transparent";
-        coordsTxt.style.color = "#00ff00";
-    }, 1000);
-
-    // Log the data if it's a new location
+    // Log if not a duplicate
     const isNew = log.length === 0 || log[log.length-1].lat !== lat;
     if (isNew) {
         log.push({ time: new Date().toLocaleTimeString(), lat, lng });
-        dlBtn.innerText = `SAVE CSV (${log.length})`;
+        dlBtn.innerText = `SAVE DATA TO CSV (${log.length})`;
     }
+
+    // Flash the coords green
+    coordsTxt.style.color = "#fff";
+    coordsTxt.style.background = "#00ff00";
+    setTimeout(() => { 
+        coordsTxt.style.color = "#00ff00"; 
+        coordsTxt.style.background = "transparent";
+    }, 800);
 }
 
-// Download function stays the same
+// MANUAL THUMB BUTTON HANDLER
+thumbButton.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // Stop the map from moving
+    
+    const matches = lastResultText.match(/[-+]?\d+\.\d+/g);
+    if (matches && matches.length >= 2) {
+        triggerLock(parseFloat(matches[0]), parseFloat(matches[1]), "MANUAL");
+    } else {
+        status.innerText = "SYSTEM: NO NUMBERS IN VIEW";
+        status.style.color = "#ff0000";
+    }
+});
+
+// CSV Download
 dlBtn.onclick = () => {
     if (log.length === 0) return;
     let csv = "Time,Lat,Lng\n" + log.map(i => `${i.time},${i.lat},${i.lng}`).join("\n");
@@ -125,8 +138,8 @@ dlBtn.onclick = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = "gps_trip.csv";
+    a.download = "gps_scan_log.csv";
     a.click();
 };
 
-start();
+init();
