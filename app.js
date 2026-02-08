@@ -8,9 +8,7 @@ const rawDebug = document.getElementById('raw-debug');
 
 let map, marker, worker;
 let log = [];
-let stability = 0;
 let lastResultText = ""; 
-let lastCleanPair = ""; 
 let isBusy = false;
 
 async function init() {
@@ -31,11 +29,30 @@ async function init() {
     worker = await Tesseract.createWorker();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
-    // Whitelist now includes commas and signs for better matching
-    await worker.setParameters({ tessedit_char_whitelist: '0123456789.,- ' });
-    status.innerText = "SYSTEM: SCANNER ACTIVE";
+    // Removed char whitelist to let the AI "feel" the text better, then we filter manually
+    status.innerText = "SYSTEM: HIGH-SENSITIVITY MODE";
     
     scanLoop();
+}
+
+// THE NEW FUZZY FINDER
+function findCoordinates(text) {
+    // 1. Clean the text: remove everything except numbers, dots, dashes, and spaces
+    const clean = text.replace(/[^0-9.\-\s]/g, ' ');
+    // 2. Split into chunks
+    const parts = clean.split(/\s+/).filter(p => p.length > 3);
+    
+    if (parts.length >= 2) {
+        let lat = parts[0];
+        let lng = parts[1];
+
+        // 3. FUZZY FIX: If the AI missed the dot (e.g., "338568" -> "33.8568")
+        if (!lat.includes('.') && lat.length > 4) lat = lat.slice(0, 3) + "." + lat.slice(3);
+        if (!lng.includes('.') && lng.length > 4) lng = lng.slice(0, 3) + "." + lng.slice(3);
+
+        return [parseFloat(lat), parseFloat(lng)];
+    }
+    return null;
 }
 
 async function scanLoop() {
@@ -50,47 +67,35 @@ async function scanLoop() {
 
         debugCanvas.width = sw;
         debugCanvas.height = sh;
-        ctx.filter = 'contrast(200%) grayscale(100%) brightness(120%)';
+        
+        // Massive contrast boost for shaky/blurry video
+        ctx.filter = 'contrast(250%) grayscale(100%) brightness(150%)';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
         const { data: { text } } = await worker.recognize(debugCanvas);
         lastResultText = text.trim();
-        rawDebug.innerText = "AI SEEING: " + (lastResultText || "...");
+        rawDebug.innerText = "AI SEEING: " + lastResultText;
 
-        // AGGRESSIVE MATCHING: Finds numbers even with commas or weird spacing
-        const matches = lastResultText.match(/[-+]?\d+[\.\,]\d+/g);
-
-        if (matches && matches.length >= 2) {
-            const lat = parseFloat(matches[0].replace(',', '.'));
-            const lng = parseFloat(matches[1].replace(',', '.'));
-            const currentPair = `${lat},${lng}`;
-
-            if (currentPair === lastCleanPair) {
-                stability += 34; 
-            } else {
-                stability = 34;
-                lastCleanPair = currentPair;
-            }
-
-            if (stability >= 100) {
-                triggerLock(lat, lng, "AUTO");
-                stability = 0;
-            }
-        } else {
-            stability = Math.max(0, stability - 5);
+        // Auto-lock only if it's very clear
+        const coords = findCoordinates(lastResultText);
+        if (coords && lastResultText.includes('.')) { 
+            // In auto-mode, we still want a decimal to be safe
+            triggerLock(coords[0], coords[1], "AUTO");
         }
+        
         isBusy = false;
     }
-    setTimeout(scanLoop, 200);
+    setTimeout(scanLoop, 100); // Faster scan cycle
 }
 
 function triggerLock(lat, lng, source) {
-    if (navigator.vibrate) navigator.vibrate(80);
-    map.setView([lat, lng], 15);
+    if (isNaN(lat) || isNaN(lng)) return;
+    if (navigator.vibrate) navigator.vibrate(50);
+
+    map.setView([lat, lng], 14);
     marker.setLatLng([lat, lng]);
-    coordsTxt.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    coordsTxt.innerText = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     
-    // Add to Data Stabilization Indicator in Log
     log.push({ time: new Date().toLocaleTimeString(), lat, lng });
     dlBtn.innerText = `SAVE CSV (${log.length})`;
 
@@ -99,18 +104,17 @@ function triggerLock(lat, lng, source) {
     setTimeout(() => { 
         coordsTxt.style.background = "transparent";
         coordsTxt.style.color = "#00ff00";
-    }, 1000);
+    }, 500);
 }
 
+// MANUAL OVERRIDE (ZERO STABILITY REQUIRED)
 thumbButton.addEventListener('click', (e) => {
     e.preventDefault();
-    const matches = lastResultText.match(/[-+]?\d+[\.\,]\d+/g);
-    if (matches && matches.length >= 2) {
-        const lat = parseFloat(matches[0].replace(',', '.'));
-        const lng = parseFloat(matches[1].replace(',', '.'));
-        triggerLock(lat, lng, "MANUAL");
+    const coords = findCoordinates(lastResultText);
+    if (coords) {
+        triggerLock(coords[0], coords[1], "MANUAL");
     } else {
-        alert("STABILIZATION FAILED\nAI saw: " + lastResultText + "\n\nTry to keep the camera steadier or closer.");
+        alert("STABILIZATION FAILED\n\nAI saw: " + lastResultText + "\n\nTry to get the numbers inside the box.");
     }
 });
 
