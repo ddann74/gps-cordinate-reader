@@ -7,60 +7,66 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00ff00; --danger: #ff4444; --bg: #000; }
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { margin: 0; background: var(--bg); color: #fff; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Settings Tab Overlay */
+        /* Full Screen Settings Overlay */
         #settings-tab {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.98); z-index: 10000;
+            background: rgba(0,0,0,0.95); z-index: 10000;
             display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
             transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         #settings-tab.hidden { transform: translateY(-110%); }
         
-        .status-box { background: #111; padding: 20px; border-radius: 12px; border: 1px solid #333; width: 100%; max-width: 350px; }
+        .status-box { background: #111; padding: 20px; border-radius: 15px; border: 1px solid #333; width: 100%; max-width: 350px; }
         .perm-btn { background: var(--accent); color: #000; padding: 18px; border-radius: 8px; font-weight: bold; border: none; margin-top: 15px; width: 100%; cursor: pointer; font-size: 16px; }
+        .perm-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
         
-        /* Test Preview Area */
+        /* Test Scan Area */
         #test-zone { margin-top: 25px; width: 100%; max-width: 300px; display: none; }
         #test-canvas { width: 100%; height: 80px; border: 1px solid var(--accent); background: #000; border-radius: 4px; }
-        .debug-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
-        #test-output { font-family: monospace; color: var(--accent); font-size: 18px; margin: 5px 0; }
+        .debug-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; }
+        #test-output { font-family: monospace; color: var(--accent); font-size: 20px; margin: 8px 0; min-height: 24px; }
 
-        /* Main App UI */
-        #video-container { position: relative; height: 35vh; background: #000; border-bottom: 2px solid var(--accent); }
+        /* Main View */
+        #video-container { position: relative; height: 35vh; background: #000; border-bottom: 2px solid var(--accent); flex-shrink: 0; }
         video { width: 100%; height: 100%; object-fit: cover; }
-        .focus-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 80px; border: 2px solid var(--accent); box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.6); pointer-events: none; }
+        .focus-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 80px; border: 2px solid var(--accent); box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; }
         
-        #stab-bar-wrap { width: 100%; height: 4px; background: #222; position: absolute; bottom: 0; }
-        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        /* Data Stabilization Indicator */
+        #stab-bar-wrap { width: 100%; height: 6px; background: #222; position: absolute; bottom: 0; left: 0; }
+        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s ease; box-shadow: 0 0 10px var(--accent); }
         
-        #controls { padding: 15px; background: #0a0a0a; flex-shrink: 0; border-top: 1px solid #222; }
-        #coords { text-align: center; font-family: monospace; color: var(--accent); font-size: 26px; font-weight: bold; margin: 5px 0; }
+        #map { flex-grow: 1; width: 100%; z-index: 1; }
         
-        #gear-btn { position: absolute; top: 15px; left: 15px; z-index: 500; background: rgba(255,255,255,0.1); border: 1px solid #444; color: white; padding: 10px; border-radius: 50%; font-size: 20px; line-height: 1; backdrop-filter: blur(5px); }
+        #controls { padding: 15px; background: #0a0a0a; border-top: 1px solid #222; z-index: 5; }
+        #coords { text-align: center; font-family: monospace; color: var(--accent); font-size: 26px; font-weight: bold; }
+        
+        #gear-btn { position: absolute; top: 15px; left: 15px; z-index: 500; background: rgba(0,0,0,0.6); border: 1px solid #444; color: white; padding: 12px; border-radius: 50%; font-size: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <div id="settings-tab">
-        <h2 style="margin-bottom: 10px;">Scanner Settings</h2>
+        <h2 style="margin-bottom: 5px;">GPS AI Config</h2>
+        <p style="color: #888; margin-bottom: 25px; font-size: 14px;">Camera & AI Stabilization Setup</p>
+        
         <div class="status-box">
-            <p id="cam-status">Camera: 🔴 Offline</p>
+            <p id="cam-status">Camera: 🔴 Waiting</p>
             <p id="ai-status">AI Engine: 🔴 Offline</p>
-            <button class="perm-btn" id="init-btn">GRANT ACCESS & TEST</button>
-            <button class="perm-btn" id="close-settings" style="background:#333; color:white; display:none; margin-top: 10px;">START SCANNING</button>
+            <button class="perm-btn" id="init-btn">GRANT CAMERA ACCESS</button>
+            <button class="perm-btn" id="close-settings" style="background:#fff; color:#000; display:none; margin-top: 10px;">START LIVE SCAN</button>
         </div>
 
         <div id="test-zone">
-            <div class="debug-label">AI Visual Processing (High Contrast)</div>
+            <div class="debug-label">AI Crop View (High Contrast)</div>
             <canvas id="test-canvas"></canvas>
-            <div class="debug-label">Current AI Interpretation</div>
+            <div class="debug-label">AI Reading</div>
             <div id="test-output">---</div>
-            <div class="debug-label">Data Stabilization</div>
-            <div style="width:100%; height:8px; background:#222; border-radius:4px; margin-top:5px; overflow:hidden;">
-                <div id="test-stab-fill" style="width:0%; height:100%; background:var(--accent); transition: width 0.1s;"></div>
+            <div class="debug-label">Stabilization Strength</div>
+            <div style="width:100%; height:10px; background:#222; border-radius:5px; margin-top:5px; overflow:hidden; border: 1px solid #333;">
+                <div id="test-stab-fill" style="width:0%; height:100%; background:var(--accent);"></div>
             </div>
         </div>
     </div>
@@ -74,13 +80,11 @@
         </div>
     </div>
 
-    <div id="map-wrap" style="position:relative; flex-grow:1;">
-        <div id="map" style="width:100%; height:100%;"></div>
-    </div>
+    <div id="map"></div>
 
     <div id="controls">
         <div id="coords">0.00000, 0.00000</div>
-        <div id="address" style="text-align: center; font-size: 13px; color: #666;">Waiting for lock...</div>
+        <div id="address" style="text-align: center; font-size: 13px; color: #666; margin-top: 4px;">Point camera at GPS coordinates</div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
