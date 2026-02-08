@@ -6,7 +6,7 @@
     <title>GPS Dashcam Scanner Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #00ff00; --bg: #111; }
+        :root { --accent: #00ff00; --bg: #111; --danger: #ff4444; }
         body { margin: 0; font-family: sans-serif; background: var(--bg); color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
         #scanner-wrap { position: relative; flex: 1.2; background: #000; overflow: hidden; }
@@ -29,13 +29,15 @@
         @keyframes scanline { 0% { top: 0; } 100% { top: 100%; } }
 
         #status-msg { margin-top: 15px; font-weight: bold; color: var(--accent); background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 4px; }
-        #stb-container { width: 200px; height: 8px; background: #333; border-radius: 4px; margin-top: 5px; overflow: hidden; }
-        #stb-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        #stb-container { width: 240px; height: 10px; background: #333; border-radius: 5px; margin-top: 8px; overflow: hidden; border: 1px solid #555; }
+        #stb-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease; }
 
         #panel { flex: 1; display: flex; flex-direction: column; background: var(--bg); border-top: 2px solid #444; }
         #map { flex: 1; width: 100%; }
-        .bar { padding: 10px; display: flex; justify-content: space-between; align-items: center; background: #222; }
-        button { background: var(--accent); color: #000; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; }
+        .bar { padding: 10px; display: flex; gap: 10px; align-items: center; background: #222; overflow-x: auto; }
+        
+        button { background: var(--accent); color: #000; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        #manualBtn { background: #555; color: white; border: 1px solid var(--accent); }
         
         #debug-canvas { 
             position: absolute; top: 10px; right: 10px; width: 150px; 
@@ -49,14 +51,17 @@
         <canvas id="debug-canvas"></canvas>
         <div class="overlay">
             <div class="focus-box"><div class="line"></div></div>
-            <div id="status-msg">Initializing OCR...</div>
-            <div id="stb-container"><div id="stb-bar"></div></div>
+            <div id="status-msg">Booting AI...</div>
+            <div id="stb-container">
+                <div id="stb-bar"></div>
+            </div>
         </div>
     </div>
     <div id="panel">
         <div class="bar">
-            <div id="coords">Waiting for coordinates...</div>
-            <button id="dlBtn">Export CSV (0)</button>
+            <button id="manualBtn">Manual Lock</button>
+            <div id="coords" style="flex-grow: 1; font-family: monospace; font-size: 13px;">No Signal...</div>
+            <button id="dlBtn">CSV (0)</button>
         </div>
         <div id="map"></div>
     </div>
