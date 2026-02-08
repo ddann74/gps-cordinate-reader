@@ -11,7 +11,7 @@
         
         body { 
             margin: 0; background: var(--bg); color: #fff; 
-            font-family: -apple-system, system-ui, sans-serif; overflow: hidden; 
+            font-family: sans-serif; overflow: hidden; 
             height: 100dvh; display: flex; flex-direction: column; 
         }
 
@@ -20,70 +20,65 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.98); z-index: 10000;
             display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.4s ease;
         }
         #settings-tab.hidden { transform: translateY(-110%); }
         
         .status-box { background: #111; padding: 20px; border-radius: 12px; border: 1px solid #333; width: 100%; max-width: 350px; }
-        .perm-btn { background: var(--accent); color: #000; padding: 18px; border-radius: 8px; font-weight: bold; border: none; margin-top: 15px; width: 100%; cursor: pointer; width: 100%; }
+        .perm-btn { background: var(--accent); color: #000; padding: 18px; border-radius: 8px; font-weight: bold; border: none; margin-top: 15px; width: 100%; cursor: pointer; }
 
-        /* Camera Viewport */
+        /* Camera Section */
         #video-container { position: relative; height: 35vh; background: #000; border-bottom: 2px solid var(--accent); flex-shrink: 0; }
         video { width: 100%; height: 100%; object-fit: cover; }
         .focus-box { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            width: 280px; height: 70px; border: 2px solid var(--accent); 
+            width: 260px; height: 60px; border: 2px solid var(--accent); 
             box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; 
         }
 
-        /* Control Panel */
+        /* UI/Controls Section */
         #controls { 
             padding: 15px; background: var(--panel); border-bottom: 1px solid #222; 
             text-align: center; z-index: 10;
         }
-        #coords { font-family: monospace; color: var(--accent); font-size: 26px; font-weight: bold; margin-bottom: 12px; min-height: 30px; }
+        #coords { font-family: monospace; color: var(--accent); font-size: 24px; font-weight: bold; margin-bottom: 10px; }
         
         #lock-btn {
-            width: 100%; max-width: 300px; padding: 16px;
+            width: 100%; max-width: 280px; padding: 15px;
             background: var(--accent); color: #000;
             border: none; border-radius: 8px; font-weight: bold;
-            font-size: 18px; cursor: pointer; text-transform: uppercase;
-            box-shadow: 0 4px 15px rgba(0, 255, 0, 0.2);
+            font-size: 16px; cursor: pointer; text-transform: uppercase;
         }
-        #lock-btn:active { background: #00cc00; transform: scale(0.96); }
 
-        /* Data Stabilization Bar */
-        #stab-bar-wrap { width: 100%; height: 6px; background: #222; margin-top: 15px; border-radius: 3px; overflow: hidden; }
-        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s ease; box-shadow: 0 0 10px var(--accent); }
+        #stab-bar-wrap { width: 100%; height: 6px; background: #222; margin-top: 12px; border-radius: 3px; overflow: hidden; }
+        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s; }
 
-        /* Map Area */
+        /* Map Section */
         #map { flex: 1; width: 100%; z-index: 1; }
 
-        /* Utility */
         #gear-btn { 
             position: absolute; top: 15px; right: 15px; z-index: 500; 
             background: rgba(0,0,0,0.6); border: 1px solid #444; color: white; 
-            padding: 12px; border-radius: 50%; font-size: 20px;
+            padding: 10px; border-radius: 50%; 
         }
 
         #test-zone { margin-top: 20px; width: 100%; max-width: 300px; display: none; }
-        #test-canvas { width: 100%; height: 60px; border: 1px solid #444; margin-top: 10px; background: #000; }
+        #test-canvas { width: 100%; height: 60px; border: 1px solid #444; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <div id="settings-tab">
-        <h2 style="margin-bottom: 10px;">System Config</h2>
+        <h2>Scanner Setup</h2>
         <div class="status-box">
             <p id="cam-status">Camera: 🔴 Offline</p>
             <p id="ai-status">AI Engine: 🔴 Offline</p>
             <button class="perm-btn" id="init-btn">INITIALIZE SYSTEM</button>
-            <button class="perm-btn" id="close-settings" style="display:none; background: #fff;">START SCANNER</button>
+            <button class="perm-btn" id="close-settings" style="display:none; background: #fff;">START SCANNING</button>
         </div>
         <div id="test-zone">
-            <p style="font-size: 11px; color: #888; letter-spacing: 1px;">AI PROCESSED FEED</p>
             <canvas id="test-canvas"></canvas>
-            <div id="test-output" style="font-family: monospace; color: var(--accent); margin-top: 10px; font-size: 18px;">---</div>
+            <div id="test-output" style="font-family: monospace; color: var(--accent); margin-top: 10px;">---</div>
         </div>
     </div>
 
@@ -95,12 +90,10 @@
     </div>
 
     <div id="controls">
-        <div id="coords">WAITING FOR DATA...</div>
+        <div id="coords">0.00000, 0.00000</div>
         <button id="lock-btn">Lock Coordinates</button>
-        <div id="stab-bar-wrap">
-            <div id="stab-bar-fill"></div>
-        </div>
-        <div style="font-size: 10px; color: #555; margin-top: 6px; font-weight: bold; letter-spacing: 1px;">DATA STABILIZATION</div>
+        <div id="stab-bar-wrap"><div id="stab-bar-fill"></div></div>
+        <div style="font-size: 9px; color: #555; margin-top: 5px;">STABILIZATION STATUS</div>
     </div>
 
     <div id="map"></div>
