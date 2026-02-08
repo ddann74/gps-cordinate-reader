@@ -1,70 +1,73 @@
-// ... (Keep your top variables and initMap / startVideo the same)
-
-async function processFrame() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA && !isWorking) {
-        isWorking = true;
-        const ctx = debugCanvas.getContext('2d');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GPS Dashcam Scanner Pro</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --accent: #00ff00; --bg: #111; --danger: #ff4444; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg); color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        const scale = video.videoWidth / video.clientWidth;
-        const sw = 280 * scale;
-        const sh = 80 * scale;
-        const sx = (video.videoWidth - sw) / 2;
-        const sy = (video.videoHeight - sh) / 2;
-
-        debugCanvas.width = sw;
-        debugCanvas.height = sh;
-
-        // Try removing 'invert' if the TV has white text on black background
-        ctx.filter = 'contrast(200%) grayscale(100%)';
-        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-
-        const { data: { text } } = await worker.recognize(debugCanvas);
+        #scanner-wrap { position: relative; flex: 1.2; background: #000; overflow: hidden; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
         
-        // Log the RAW text so you can see the mistakes the AI makes
-        console.log("AI RAW READ:", text);
-
-        // More aggressive cleaning: find numbers even if there are weird symbols
-        const matches = text.match(/[-+]?\d+\.\d+/g);
-
-        if (matches && matches.length >= 2) {
-            const currentPair = `${matches[0]},${matches[1]}`;
-            
-            // If the AI is slightly inconsistent, we help it out
-            if (isSimilarlyClose(currentPair, lastSeen)) {
-                stability = Math.min(stability + 25, 100);
-            } else {
-                stability = 25;
-                lastSeen = currentPair;
-            }
-        } else {
-            stability = Math.max(0, stability - 5);
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none; z-index: 10;
         }
-
-        stbBar.style.width = stability + "%";
-
-        if (stability >= 100) {
-            updateApp(parseFloat(matches[0]), parseFloat(matches[1]));
+        .focus-box {
+            width: 280px; height: 80px; border: 2px solid var(--accent);
+            border-radius: 10px; position: relative;
+            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7);
         }
-        isWorking = false;
-    }
-    setTimeout(processFrame, 300); 
-}
+        .line {
+            position: absolute; width: 100%; height: 2px; background: red;
+            top: 0; animation: scanline 2s linear infinite;
+        }
+        @keyframes scanline { 0% { top: 0; } 100% { top: 100%; } }
 
-// Help the Data Stabilization: Allow for tiny OCR flickering
-function isSimilarlyClose(current, last) {
-    if(!last) return false;
-    // If it's 90% the same string, count it as a match
-    return current.substring(0, 5) === last.substring(0, 5);
-}
+        #status-msg { margin-top: 15px; font-weight: bold; color: var(--accent); background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 4px; }
+        #stb-container { width: 240px; height: 10px; background: #333; border-radius: 5px; margin-top: 8px; overflow: hidden; border: 1px solid #555; }
+        #stb-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease; }
 
-// Add this to your HTML: <button id="manualBtn">Manual Lock</button>
-// Then add this logic:
-document.getElementById('manualBtn').onclick = () => {
-    const matches = lastSeen.split(',');
-    if(matches.length >= 2) {
-        updateApp(parseFloat(matches[0]), parseFloat(matches[1]));
-        alert("Manual Lock Successful");
-    } else {
-        alert("AI hasn't seen any numbers yet. Adjust camera.");
-    }
-};
+        #panel { flex: 1; display: flex; flex-direction: column; background: var(--bg); border-top: 2px solid #444; }
+        #map { flex: 1; width: 100%; }
+        .bar { padding: 10px; display: flex; gap: 10px; align-items: center; background: #222; overflow-x: auto; }
+        
+        button { background: var(--accent); color: #000; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        #manualBtn { background: #555; color: white; border: 1px solid var(--accent); }
+        
+        #debug-canvas { 
+            position: absolute; top: 10px; right: 10px; width: 150px; 
+            border: 2px solid white; z-index: 100; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="scanner-wrap">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="debug-canvas"></canvas>
+        <div class="overlay">
+            <div class="focus-box"><div class="line"></div></div>
+            <div id="status-msg">Booting AI...</div>
+            <div id="stb-container">
+                <div id="stb-bar"></div>
+            </div>
+        </div>
+    </div>
+    <div id="panel">
+        <div class="bar">
+            <button id="manualBtn">Manual Lock</button>
+            <div id="coords" style="flex-grow: 1; font-family: monospace; font-size: 13px;">No Signal...</div>
+            <button id="dlBtn">CSV (0)</button>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
