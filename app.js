@@ -8,49 +8,48 @@ const rawDebug = document.getElementById('raw-debug');
 
 let map, marker, worker;
 let log = [];
+let stability = 0; // Data Stabilization counter
 let lastResultText = ""; 
+let lastCleanPair = ""; 
 let isBusy = false;
 
 async function init() {
+    // 1. Map Setup
     map = L.map('map', { zoomControl: false }).setView([-25.27, 133.77], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     marker = L.marker([-25.27, 133.77]).addTo(map);
 
+    // 2. Camera Setup
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { facingMode: "environment", width: { ideal: 1280 } } 
         });
         video.srcObject = stream;
     } catch (e) {
-        status.innerText = "SYSTEM: CAMERA ERROR";
+        status.innerText = "CAMERA ERROR: CHECK PERMISSIONS";
     }
 
-    status.innerText = "SYSTEM: LOADING AI...";
+    // 3. AI Setup
+    status.innerText = "LOADING AI ENGINE...";
     worker = await Tesseract.createWorker();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
-    // Removed char whitelist to let the AI "feel" the text better, then we filter manually
-    status.innerText = "SYSTEM: HIGH-SENSITIVITY MODE";
+    // Allow more characters so the AI doesn't get confused, we filter later
+    await worker.setParameters({ tessedit_char_whitelist: '0123456789.,- ' });
+    status.innerText = "SCANNER READY";
     
     scanLoop();
 }
 
-// THE NEW FUZZY FINDER
-function findCoordinates(text) {
-    // 1. Clean the text: remove everything except numbers, dots, dashes, and spaces
-    const clean = text.replace(/[^0-9.\-\s]/g, ' ');
-    // 2. Split into chunks
-    const parts = clean.split(/\s+/).filter(p => p.length > 3);
-    
-    if (parts.length >= 2) {
-        let lat = parts[0];
-        let lng = parts[1];
-
-        // 3. FUZZY FIX: If the AI missed the dot (e.g., "338568" -> "33.8568")
-        if (!lat.includes('.') && lat.length > 4) lat = lat.slice(0, 3) + "." + lat.slice(3);
-        if (!lng.includes('.') && lng.length > 4) lng = lng.slice(0, 3) + "." + lng.slice(3);
-
-        return [parseFloat(lat), parseFloat(lng)];
+// Function to find coordinates in messy text
+function parseCoords(text) {
+    // Looks for patterns like -33.123 or 151.123
+    const matches = text.match(/[-+]?\d+[\.\,]\d+/g);
+    if (matches && matches.length >= 2) {
+        return [
+            parseFloat(matches[0].replace(',', '.')),
+            parseFloat(matches[1].replace(',', '.'))
+        ];
     }
     return null;
 }
@@ -59,72 +58,94 @@ async function scanLoop() {
     if (video.readyState === video.HAVE_ENOUGH_DATA && !isBusy) {
         isBusy = true;
         const ctx = debugCanvas.getContext('2d');
-        const scale = video.videoWidth / video.clientWidth;
-        const sw = 280 * scale;
-        const sh = 60 * scale;
+        
+        // CROP MATH: Maps the focus-box to the raw video pixels
+        const scaleX = video.videoWidth / video.clientWidth;
+        const scaleY = video.videoHeight / video.clientHeight;
+        const sw = 300 * scaleX;
+        const sh = 100 * scaleY;
         const sx = (video.videoWidth - sw) / 2;
         const sy = (video.videoHeight - sh) / 2;
 
         debugCanvas.width = sw;
         debugCanvas.height = sh;
-        
-        // Massive contrast boost for shaky/blurry video
-        ctx.filter = 'contrast(250%) grayscale(100%) brightness(150%)';
+
+        // Image Enhancement
+        ctx.filter = 'contrast(220%) grayscale(100%) brightness(110%)';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
 
         const { data: { text } } = await worker.recognize(debugCanvas);
         lastResultText = text.trim();
-        rawDebug.innerText = "AI SEEING: " + lastResultText;
 
-        // Auto-lock only if it's very clear
-        const coords = findCoordinates(lastResultText);
-        if (coords && lastResultText.includes('.')) { 
-            // In auto-mode, we still want a decimal to be safe
-            triggerLock(coords[0], coords[1], "AUTO");
+        const found = parseCoords(lastResultText);
+        
+        if (found) {
+            const currentPair = `${found[0].toFixed(3)},${found[1].toFixed(3)}`;
+            
+            // Data Stabilization Logic
+            if (currentPair === lastCleanPair) {
+                stability = Math.min(100, stability + 25);
+            } else {
+                stability = 25;
+                lastCleanPair = currentPair;
+            }
+
+            if (stability >= 100) {
+                triggerLock(found[0], found[1], "AUTO");
+                stability = 0;
+            }
+        } else {
+            stability = Math.max(0, stability - 10);
         }
+
+        // Update raw debug line with Data Stabilization percentage
+        rawDebug.innerText = `AI READ: ${lastResultText || "..."} | STABILITY: ${stability}%`;
         
         isBusy = false;
     }
-    setTimeout(scanLoop, 100); // Faster scan cycle
+    setTimeout(scanLoop, 150);
 }
 
 function triggerLock(lat, lng, source) {
-    if (isNaN(lat) || isNaN(lng)) return;
-    if (navigator.vibrate) navigator.vibrate(50);
+    if (navigator.vibrate) navigator.vibrate(60);
 
-    map.setView([lat, lng], 14);
+    map.setView([lat, lng], 15);
     marker.setLatLng([lat, lng]);
-    coordsTxt.innerText = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     
-    log.push({ time: new Date().toLocaleTimeString(), lat, lng });
+    coordsTxt.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    
+    // Add to log
+    log.push({ time: new Date().toLocaleTimeString(), lat, lng, source });
     dlBtn.innerText = `SAVE CSV (${log.length})`;
 
+    // Visual feedback
     coordsTxt.style.background = "#00ff00";
     coordsTxt.style.color = "#000";
     setTimeout(() => { 
         coordsTxt.style.background = "transparent";
         coordsTxt.style.color = "#00ff00";
-    }, 500);
+    }, 800);
 }
 
-// MANUAL OVERRIDE (ZERO STABILITY REQUIRED)
+// Manual Button
 thumbButton.addEventListener('click', (e) => {
     e.preventDefault();
-    const coords = findCoordinates(lastResultText);
-    if (coords) {
-        triggerLock(coords[0], coords[1], "MANUAL");
+    const found = parseCoords(lastResultText);
+    if (found) {
+        triggerLock(found[0], found[1], "MANUAL");
     } else {
-        alert("STABILIZATION FAILED\n\nAI saw: " + lastResultText + "\n\nTry to get the numbers inside the box.");
+        alert("STABILIZATION FAILED\nAI Sees: [" + lastResultText + "]\n\nTry to center the numbers in the box.");
     }
 });
 
+// CSV Download
 dlBtn.onclick = () => {
     if (log.length === 0) return;
-    let csv = "Time,Lat,Lng\n" + log.map(i => `${i.time},${i.lat},${i.lng}`).join("\n");
+    let csv = "Time,Lat,Lng,Source\n" + log.map(i => `${i.time},${i.lat},${i.lng},${i.source}`).join("\n");
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = "gps_log.csv"; a.click();
+    a.href = url; a.download = "gps_scan_log.csv"; a.click();
 };
 
 init();
