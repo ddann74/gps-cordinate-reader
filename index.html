@@ -3,45 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Scanner - Large Map</title>
+    <title>GPS Scanner - Thumb Mode</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00ff00; --danger: #ff4444; }
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         
-        /* 1. SMALLER CAMERA AREA (25% of screen) */
-        #video-container { position: relative; height: 25vh; background: #111; border-bottom: 2px solid #444; }
+        /* Camera Section */
+        #video-container { position: relative; height: 25vh; background: #111; border-bottom: 2px solid #444; z-index: 5; }
         video { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
-        
-        /* Focus Box adjusted for smaller height */
         .focus-box { 
-            position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%);
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             width: 280px; height: 50px; border: 2px solid var(--accent);
             box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.6);
         }
 
-        /* 2. SYSTEM STATUS BAR */
-        #status-bar { font-size: 11px; color: var(--accent); background: #111; padding: 5px 10px; border-bottom: 1px solid #333; text-transform: uppercase; letter-spacing: 1px; }
+        #status-bar { font-size: 11px; color: var(--accent); background: #111; padding: 5px 10px; border-bottom: 1px solid #333; z-index: 10; }
 
-        /* 3. LARGER MAP AREA (Remaining space) */
-        #map-wrap { position: relative; flex-grow: 1; }
-        #map { width: 100%; height: 100%; }
+        /* Map Section */
+        #map-wrap { position: relative; flex-grow: 1; z-grow: 1; }
+        #map { width: 100%; height: 100%; z-index: 1; }
 
-        /* THE RED AI BOX (Floating on Map) */
+        /* THE FLOATING THUMB BUTTON */
+        #manualBtn { 
+            position: absolute; 
+            left: 20px; 
+            bottom: 30%; /* Positioned for comfortable thumb reach */
+            width: 80px; 
+            height: 80px; 
+            background: rgba(255, 68, 68, 0.9); 
+            color: white; 
+            border: 3px solid white; 
+            border-radius: 50%; 
+            font-weight: bold; 
+            font-size: 12px;
+            z-index: 9999; /* Ensures it stays on top of the map */
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+        #manualBtn:active { transform: scale(0.9); background: var(--danger); }
+
+        /* AI Preview (Top Right) */
         #debug-canvas { 
             position: absolute; top: 10px; right: 10px; 
             width: 140px; height: 45px; 
             border: 2px solid var(--danger); z-index: 1000; background: #000; 
         }
 
-        /* 4. CONTROL PANEL */
-        #controls { padding: 10px; background: #222; border-top: 2px solid #444; }
-        .row { display: flex; gap: 8px; }
-        button { flex: 1; padding: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
-        #manualBtn { background: var(--danger); color: #fff; }
-        #dlBtn { background: #444; color: #fff; }
-        #coords { margin-top: 8px; text-align: center; font-family: monospace; color: var(--accent); font-size: 14px; }
+        /* Bottom Control Bar */
+        #controls { padding: 10px; background: #222; border-top: 2px solid #444; z-index: 10; }
+        #coords { text-align: center; font-family: monospace; color: var(--accent); font-size: 16px; margin-bottom: 5px; }
+        #dlBtn { width: 100%; padding: 12px; background: #444; color: white; border: none; border-radius: 6px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -51,19 +68,17 @@
         <div class="focus-box"></div>
     </div>
 
-    <div id="status-bar">AI Status: Scanning...</div>
+    <div id="status-bar">QR-MODE: READY</div>
 
     <div id="map-wrap">
+        <div id="manualBtn">LOCK<br>NOW</div>
         <canvas id="debug-canvas"></canvas>
         <div id="map"></div>
     </div>
 
     <div id="controls">
-        <div class="row">
-            <button id="manualBtn">LOCK COORDS</button>
-            <button id="dlBtn">SAVE CSV (0)</button>
-        </div>
-        <div id="coords">SIGNAL SEARCHING...</div>
+        <div id="coords">WAITING FOR SIGNAL</div>
+        <button id="dlBtn">DOWNLOAD CSV (0)</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
