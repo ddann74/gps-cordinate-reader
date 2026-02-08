@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPS Scanner - Pro Thumb Layout</title>
+    <title>GPS Scanner - Thumb Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00ff00; --danger: #ff4444; --bg: #000; }
@@ -11,7 +11,7 @@
         
         body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Camera: 25% height */
+        /* Camera Section */
         #video-container { position: relative; height: 25vh; background: #111; border-bottom: 2px solid #444; z-index: 5; }
         video { width: 100%; height: 100%; object-fit: cover; opacity: 0.9; }
         
@@ -23,18 +23,18 @@
 
         #status-bar { font-size: 11px; color: var(--accent); background: #111; padding: 6px 12px; border-bottom: 1px solid #333; z-index: 10; font-weight: bold; }
 
-        /* Map: Remaining Space */
+        /* Map Section */
         #map-wrap { position: relative; flex-grow: 1; overflow: hidden; }
         #map { width: 100%; height: 100%; z-index: 1; }
 
-        /* AI Preview Canvas (Red Box) */
+        /* AI Debug Box (Red) */
         #debug-canvas { 
             position: absolute; top: 10px; right: 10px; 
             width: 140px; height: 45px; 
             border: 2px solid var(--danger); z-index: 1000; background: #000; 
         }
 
-        /* LEFT THUMB BUTTON - Floating on Map */
+        /* Floating Thumb Button */
         #manualBtn { 
             position: absolute; 
             left: 20px; 
@@ -46,22 +46,22 @@
             border: 4px solid #fff; 
             border-radius: 50%; 
             font-weight: bold; 
-            z-index: 99999; /* Highest priority */
+            z-index: 9999; 
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
             box-shadow: 0 5px 15px rgba(0,0,0,0.5);
             cursor: pointer;
-            user-select: none;
             touch-action: manipulation;
         }
         #manualBtn:active { transform: scale(0.9); background: #cc0000; }
 
-        /* Bottom HUD */
-        #controls { padding: 15px; background: #222; border-top: 2px solid #444; z-index: 10; }
+        /* HUD Control Bar */
+        #controls { padding: 10px; background: #222; border-top: 2px solid #444; z-index: 10; }
+        #raw-debug { font-size: 10px; color: #888; text-align: center; margin-bottom: 5px; font-family: monospace; }
         #coords { text-align: center; font-family: monospace; color: var(--accent); font-size: 18px; margin-bottom: 10px; min-height: 24px; }
-        #dlBtn { width: 100%; padding: 15px; background: #444; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; }
+        #dlBtn { width: 100%; padding: 15px; background: #444; color: white; border: none; border-radius: 8px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -71,7 +71,7 @@
         <div class="focus-box"></div>
     </div>
 
-    <div id="status-bar">SYSTEM: STARTING...</div>
+    <div id="status-bar">SYSTEM: INITIALIZING...</div>
 
     <div id="map-wrap">
         <canvas id="debug-canvas"></canvas>
@@ -80,8 +80,9 @@
     </div>
 
     <div id="controls">
+        <div id="raw-debug">AI SEEING: ---</div>
         <div id="coords">WAITING FOR SIGNAL</div>
-        <button id="dlBtn">SAVE DATA TO CSV (0)</button>
+        <button id="dlBtn">SAVE CSV (0)</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
