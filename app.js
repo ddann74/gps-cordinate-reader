@@ -1,73 +1,132 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPS Dashcam Scanner Pro</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        :root { --accent: #00ff00; --bg: #111; --danger: #ff4444; }
-        body { margin: 0; font-family: sans-serif; background: var(--bg); color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        #scanner-wrap { position: relative; flex: 1.2; background: #000; overflow: hidden; }
-        #webcam { width: 100%; height: 100%; object-fit: cover; }
-        
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            pointer-events: none; z-index: 10;
-        }
-        .focus-box {
-            width: 280px; height: 80px; border: 2px solid var(--accent);
-            border-radius: 10px; position: relative;
-            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7);
-        }
-        .line {
-            position: absolute; width: 100%; height: 2px; background: red;
-            top: 0; animation: scanline 2s linear infinite;
-        }
-        @keyframes scanline { 0% { top: 0; } 100% { top: 100%; } }
+const video = document.getElementById('webcam');
+const statusMsg = document.getElementById('status-msg');
+const stbBar = document.getElementById('stb-bar');
+const coordsTxt = document.getElementById('coords');
+const dlBtn = document.getElementById('dlBtn');
+const manualBtn = document.getElementById('manualBtn');
+const debugCanvas = document.getElementById('debug-canvas');
 
-        #status-msg { margin-top: 15px; font-weight: bold; color: var(--accent); background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 4px; }
-        #stb-container { width: 240px; height: 10px; background: #333; border-radius: 5px; margin-top: 8px; overflow: hidden; border: 1px solid #555; }
-        #stb-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+let map, marker, worker;
+let log = [];
+let stability = 0;
+let lastMatch = null;
+let isBusy = false;
 
-        #panel { flex: 1; display: flex; flex-direction: column; background: var(--bg); border-top: 2px solid #444; }
-        #map { flex: 1; width: 100%; }
-        .bar { padding: 10px; display: flex; gap: 10px; align-items: center; background: #222; overflow-x: auto; }
+// 1. Setup Map
+function initMap() {
+    map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    marker = L.marker([0, 0]).addTo(map);
+}
+
+// 2. Setup Camera
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", width: { ideal: 1280 } } 
+        });
+        video.srcObject = stream;
+    } catch (e) {
+        statusMsg.innerText = "Camera Error! Check Settings.";
+    }
+}
+
+// 3. Setup AI
+async function initAI() {
+    statusMsg.innerText = "Loading AI Brain...";
+    worker = await Tesseract.createWorker();
+    await worker.loadLanguage('eng');
+    await worker.initialize('eng');
+    // Only look for numbers and punctuation
+    await worker.setParameters({ tessedit_char_whitelist: '0123456789.,- ' });
+    statusMsg.innerText = "Scanner Ready";
+    runLoop();
+}
+
+// 4. The Vision Loop
+async function runLoop() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA && !isBusy) {
+        isBusy = true;
+        const ctx = debugCanvas.getContext('2d');
         
-        button { background: var(--accent); color: #000; border: none; padding: 12px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
-        #manualBtn { background: #555; color: white; border: 1px solid var(--accent); }
-        
-        #debug-canvas { 
-            position: absolute; top: 10px; right: 10px; width: 150px; 
-            border: 2px solid white; z-index: 100; background: #000;
+        // Crop logic
+        const scale = video.videoWidth / video.clientWidth;
+        const sw = 280 * scale;
+        const sh = 80 * scale;
+        const sx = (video.videoWidth - sw) / 2;
+        const sy = (video.videoHeight - sh) / 2;
+
+        debugCanvas.width = sw;
+        debugCanvas.height = sh;
+
+        // Enhance image for TV screens (Contrast & Grayscale)
+        ctx.filter = 'contrast(200%) grayscale(100%)';
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+
+        const { data: { text } } = await worker.recognize(debugCanvas);
+        console.log("Raw Text Seen:", text); // Check F12 to see this
+
+        // Clean and find coordinates
+        const matches = text.match(/[-+]?\d+\.\d+/g);
+
+        if (matches && matches.length >= 2) {
+            const current = [matches[0], matches[1]];
+            
+            if (lastMatch && current[0] === lastMatch[0]) {
+                stability = Math.min(stability + 25, 100);
+            } else {
+                stability = 25;
+                lastMatch = current;
+            }
+            statusMsg.innerText = `Data Stabilization: ${stability}%`;
+        } else {
+            stability = Math.max(0, stability - 5);
         }
-    </style>
-</head>
-<body>
-    <div id="scanner-wrap">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="debug-canvas"></canvas>
-        <div class="overlay">
-            <div class="focus-box"><div class="line"></div></div>
-            <div id="status-msg">Booting AI...</div>
-            <div id="stb-container">
-                <div id="stb-bar"></div>
-            </div>
-        </div>
-    </div>
-    <div id="panel">
-        <div class="bar">
-            <button id="manualBtn">Manual Lock</button>
-            <div id="coords" style="flex-grow: 1; font-family: monospace; font-size: 13px;">No Signal...</div>
-            <button id="dlBtn">CSV (0)</button>
-        </div>
-        <div id="map"></div>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="app.js"></script>
-</body>
-</html>
+        stbBar.style.width = stability + "%";
+
+        if (stability >= 100) {
+            updateApp(parseFloat(lastMatch[0]), parseFloat(lastMatch[1]));
+        }
+        isBusy = false;
+    }
+    setTimeout(runLoop, 200); 
+}
+
+// 5. Manual Capture
+manualBtn.onclick = () => {
+    if (lastMatch) {
+        updateApp(parseFloat(lastMatch[0]), parseFloat(lastMatch[1]));
+        statusMsg.innerText = "MANUAL LOCK OK";
+    } else {
+        alert("The AI hasn't recognized any numbers yet. Check the debug window!");
+    }
+};
+
+function updateApp(lat, lng) {
+    const pos = [lat, lng];
+    map.setView(pos, 15);
+    marker.setLatLng(pos);
+    coordsTxt.innerText = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+    const isDuplicate = log.length > 0 && log[log.length-1].lat === lat;
+    if (!isDuplicate) {
+        log.push({ time: new Date().toLocaleTimeString(), lat, lng });
+        dlBtn.innerText = `SAVE CSV (${log.length})`;
+    }
+}
+
+dlBtn.onclick = () => {
+    if (log.length === 0) return alert("Nothing to save yet!");
+    let csv = "Time,Lat,Lng\n" + log.map(i => `${i.time},${i.lat},${i.lng}`).join("\n");
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "gps_trip_data.csv";
+    a.click();
+};
+
+initMap();
+startCamera();
+initAI();
