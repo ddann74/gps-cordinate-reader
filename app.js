@@ -1,48 +1,51 @@
-let consistencyCount = 0; // New variable to track identical reads
+// ... [Keep top variables same as v1.6.3] ...
 
-function processData(text) {
-    // 1. Extract only valid-looking GPS segments (digits, dots, dashes)
-    const matches = text.match(/-?\d+\.\d+/g); 
-    
-    if (matches && matches.length >= 2) {
-        const lat = parseFloat(matches[0]);
-        const lng = parseFloat(matches[1]);
-        
-        // 2. Strict Range Validation
-        const isValidRange = Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-        
-        if (isValidRange) {
-            // 3. CONSISTENCY CHECK: Does this match the previous frame?
-            // This prevents "jumpy" numbers from 8s looking like 0s.
-            if (text.trim() === lastResult) {
-                consistencyCount++;
-            } else {
-                consistencyCount = 0;
-                lastResult = text.trim();
-            }
+initBtn.onclick = async () => {
+    initBtn.innerText = "LOADING AI...";
+    initBtn.disabled = true;
 
-            // Only update the display if the AI is "sure" (seen it 3 times)
-            if (consistencyCount >= 3) {
-                currentLat = lat;
-                currentLng = lng;
-                coordDisplay.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-                coordDisplay.style.color = "var(--accent)";
-                
-                // Advance the Stabilization Bar based on your requested feature
-                stability = Math.min(100, stability + 10);
-            }
-            
-            // Auto-lock if stabilization hits 100
-            if (stability >= 100) {
-                updatePosition(lat, lng);
-                stability = 0;
-            }
-        }
-    } else {
-        // Slowly decay stability and fade text if data is lost
-        stability = Math.max(0, stability - 2);
-        coordDisplay.style.color = "#444";
-        consistencyCount = 0;
+    // Check for Secure Context
+    if (!window.isSecureContext) {
+        initBtn.innerText = "ERROR: HTTPS REQ";
+        initBtn.style.background = "#ff4444";
+        return;
     }
-    stabFill.style.width = stability + "%";
-}
+
+    if (worker) try { await worker.terminate(); } catch(e){}
+    
+    try {
+        initBtn.innerText = "STARTING CAM...";
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", width: { ideal: 1280 } } 
+        });
+        video.srcObject = stream;
+        
+        initBtn.innerText = "CONFIGURING AI...";
+        worker = await Tesseract.createWorker();
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+        await worker.setParameters({ 
+            tessedit_char_whitelist: '0123456789.- NSEW', 
+            tessedit_pageseg_mode: '7' 
+        });
+        
+        document.getElementById('ai-status').innerText = "AI: ONLINE";
+        document.getElementById('cam-status').innerText = "CAM: ACTIVE";
+        initBtn.style.display = 'none'; 
+        closeBtn.style.display = 'block';
+        document.getElementById('test-zone').style.display = 'block';
+        
+        if (!isStarted) { isStarted = true; scanLoop(); }
+    } catch (err) { 
+        console.error(err);
+        initBtn.disabled = false;
+        if (err.name === "NotAllowedError") {
+            initBtn.innerText = "ERROR: CAM BLOCKED";
+        } else {
+            initBtn.innerText = "RETRY INITIALIZE";
+        }
+        initBtn.style.background = "#ff4444";
+    }
+};
+
+// ... [Keep remaining scanLoop and processData logic same as v1.6.3] ...
