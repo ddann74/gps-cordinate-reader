@@ -3,101 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPS AI Scanner Pro</title>
+    <title>GPS Scanner v1.6.3 FINALIZED</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00ff00; --bg: #000; --panel: #111; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
-        body { 
-            margin: 0; background: var(--bg); color: #fff; 
-            font-family: sans-serif; overflow: hidden; 
-            height: 100dvh; display: flex; flex-direction: column; 
-        }
-
-        /* Settings Overlay */
-        #settings-tab {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.98); z-index: 10000;
-            display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
-            transition: transform 0.4s ease;
-        }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: 'Courier New', monospace; overflow: hidden; height: 100dvh; display: flex; flex-direction: column; }
+        #settings-tab { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); z-index: 10000; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; transition: transform 0.4s ease; }
         #settings-tab.hidden { transform: translateY(-110%); }
-        
         .status-box { background: #111; padding: 20px; border-radius: 12px; border: 1px solid #333; width: 100%; max-width: 350px; }
         .perm-btn { background: var(--accent); color: #000; padding: 18px; border-radius: 8px; font-weight: bold; border: none; margin-top: 15px; width: 100%; cursor: pointer; }
-
-        /* Camera Section */
-        #video-container { position: relative; height: 35vh; background: #000; border-bottom: 2px solid var(--accent); flex-shrink: 0; }
+        #video-container { position: relative; height: 32vh; background: #000; border-bottom: 2px solid var(--accent); flex-shrink: 0; }
         video { width: 100%; height: 100%; object-fit: cover; }
-        .focus-box { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            width: 260px; height: 60px; border: 2px solid var(--accent); 
-            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; 
-        }
-
-        /* UI/Controls Section */
-        #controls { 
-            padding: 15px; background: var(--panel); border-bottom: 1px solid #222; 
-            text-align: center; z-index: 10;
-        }
-        #coords { font-family: monospace; color: var(--accent); font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-        
-        #lock-btn {
-            width: 100%; max-width: 280px; padding: 15px;
-            background: var(--accent); color: #000;
-            border: none; border-radius: 8px; font-weight: bold;
-            font-size: 16px; cursor: pointer; text-transform: uppercase;
-        }
-
+        .focus-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 70px; border: 2px solid var(--accent); box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; }
+        .pulse { animation: pulse-anim 0.2s ease-out; }
+        @keyframes pulse-anim { 0% { box-shadow: 0 0 0 var(--accent), 0 0 0 5000px rgba(0, 0, 0, 0.7); } 50% { box-shadow: 0 0 20px var(--accent), 0 0 0 5000px rgba(0, 0, 0, 0.7); } 100% { box-shadow: 0 0 0 var(--accent), 0 0 0 5000px rgba(0, 0, 0, 0.7); } }
+        #controls { padding: 12px; background: var(--panel); border-bottom: 1px solid #222; text-align: center; position: relative; z-index: 20; }
+        #coords { font-size: 22px; font-weight: bold; color: var(--accent); margin-bottom: 10px; }
+        #lock-btn { width: 100%; max-width: 280px; padding: 14px; background: var(--accent); color: #000; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; }
         #stab-bar-wrap { width: 100%; height: 6px; background: #222; margin-top: 12px; border-radius: 3px; overflow: hidden; }
-        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s; }
-
-        /* Map Section */
-        #map { flex: 1; width: 100%; z-index: 1; }
-
-        #gear-btn { 
-            position: absolute; top: 15px; right: 15px; z-index: 500; 
-            background: rgba(0,0,0,0.6); border: 1px solid #444; color: white; 
-            padding: 10px; border-radius: 50%; 
-        }
-
-        #test-zone { margin-top: 20px; width: 100%; max-width: 300px; display: none; }
-        #test-canvas { width: 100%; height: 60px; border: 1px solid #444; margin-top: 10px; }
+        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        #map { flex: 1; width: 100%; background: #1a1a1a; z-index: 1; }
+        #gear-btn { position: absolute; top: 15px; right: 15px; z-index: 500; background: rgba(0,0,0,0.6); border: 1px solid #444; color: white; padding: 10px; border-radius: 50%; }
+        #test-canvas { width: 100%; height: 60px; border: 1px solid #444; margin-top: 10px; background: #000; }
     </style>
 </head>
 <body>
-
     <div id="settings-tab">
-        <h2>Scanner Setup</h2>
+        <h2>CORE v1.6.3</h2>
         <div class="status-box">
-            <p id="cam-status">Camera: 🔴 Offline</p>
-            <p id="ai-status">AI Engine: 🔴 Offline</p>
-            <button class="perm-btn" id="init-btn">INITIALIZE SYSTEM</button>
-            <button class="perm-btn" id="close-settings" style="display:none; background: #fff;">START SCANNING</button>
+            <p id="cam-status">CAMERA: READY</p>
+            <p id="ai-status">AI: READY</p>
+            <button class="perm-btn" id="init-btn">INITIALIZE CORE</button>
+            <button class="perm-btn" id="close-settings" style="display:none; background: #fff;">START SCANNER</button>
         </div>
-        <div id="test-zone">
+        <div id="test-zone" style="display:none; margin-top:20px; width:100%; max-width:300px;">
             <canvas id="test-canvas"></canvas>
-            <div id="test-output" style="font-family: monospace; color: var(--accent); margin-top: 10px;">---</div>
+            <div id="test-output" style="color: var(--accent); margin-top: 10px; font-size: 11px; text-align: center;">---</div>
         </div>
     </div>
-
     <button id="gear-btn">⚙️</button>
-
-    <div id="video-container">
-        <video id="webcam" autoplay playsinline muted></video>
-        <div class="focus-box"></div>
-    </div>
-
+    <div id="video-container"><video id="webcam" autoplay playsinline muted></video><div id="f-box" class="focus-box"></div></div>
     <div id="controls">
-        <div id="coords">0.00000, 0.00000</div>
-        <button id="lock-btn">Lock Coordinates</button>
+        <div id="coords">SIGNAL READY...</div>
+        <button id="lock-btn">LOCK COORDINATES</button>
         <div id="stab-bar-wrap"><div id="stab-bar-fill"></div></div>
-        <div style="font-size: 9px; color: #555; margin-top: 5px;">STABILIZATION STATUS</div>
+        <div style="font-size: 9px; color: #555; margin-top: 5px; letter-spacing: 1px;">DATA STABILIZATION</div>
     </div>
-
     <div id="map"></div>
-
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>
