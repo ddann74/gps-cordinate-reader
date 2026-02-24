@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GPS v1.6.5 EMERGENCY</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --accent: #00ff00; --bg: #000; --panel: #111; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: monospace; overflow: hidden; height: 100dvh; display: flex; flex-direction: column; }
+        #settings-tab { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; transition: 0.4s; }
+        #settings-tab.hidden { opacity: 0; pointer-events: none; transform: scale(1.1); }
+        .status-box { background: #111; padding: 20px; border-radius: 12px; border: 1px solid #333; width: 100%; max-width: 350px; text-align: center; }
+        .perm-btn { background: var(--accent); color: #000; padding: 20px; border-radius: 8px; font-weight: bold; border: none; margin-top: 15px; width: 100%; cursor: pointer; font-size: 16px; }
+        #video-container { position: relative; height: 35vh; background: #000; flex-shrink: 0; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .focus-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 70px; border: 2px solid var(--accent); box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; }
+        #controls { padding: 15px; background: var(--panel); text-align: center; border-bottom: 1px solid #333; }
+        #coords { font-size: 20px; color: var(--accent); margin-bottom: 10px; min-height: 24px; }
+        #stab-bar-wrap { width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        #map { flex: 1; width: 100%; z-index: 1; }
+        #gear-btn { position: absolute; top: 15px; right: 15px; z-index: 500; background: rgba(0,0,0,0.6); border: 1px solid #444; color: white; padding: 10px; border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+    <div id="settings-tab">
+        <div class="status-box">
+            <h2 style="margin-top:0; color:var(--accent);">GPS CORE v1.6.5</h2>
+            <p id="debug-log">SYSTEM IDLE</p>
+            <button class="perm-btn" id="init-btn">INITIALIZE CORE</button>
+            <button class="perm-btn" id="close-settings" style="display:none; background: #fff;">START SCANNER</button>
+        </div>
+    </div>
+
+    <button id="gear-btn">⚙️</button>
+    
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div id="f-box" class="focus-box"></div>
+    </div>
+
+    <div id="controls">
+        <div id="coords">WAITING FOR INITIALIZATION</div>
+        <div id="stab-bar-wrap"><div id="stab-bar-fill"></div></div>
+        <div style="font-size: 10px; color: #666; margin-top: 5px;">DATA STABILIZATION</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // DOM Elements
+        const video = document.getElementById('webcam');
+        const initBtn = document.getElementById('init-btn');
+        const debugLog = document.getElementById('debug-log');
+        const settingsTab = document.getElementById('settings-tab');
+        const closeBtn = document.getElementById('close-settings');
+        const stabFill = document.getElementById('stab-bar-fill');
+        const coordDisplay = document.getElementById('coords');
+
+        let worker, map, marker;
+        let stability = 0, lastResult = "", isBusy = false;
+
+        // Setup Map Immediately
+        map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        marker = L.marker([0, 0]).addTo(map);
+
+        initBtn.onclick = async () => {
+            try {
+                debugLog.innerText = "CHECKING CAMERA...";
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" } 
+                });
+                video.srcObject = stream;
+
+                debugLog.innerText = "LOADING AI ENGINE...";
+                worker = await Tesseract.createWorker();
+                await worker.loadLanguage('eng');
+                await worker.initialize('eng');
+                await worker.setParameters({
+                    tessedit_char_whitelist: '0123456789.- NSEW',
+                    tessedit_pageseg_mode: '7'
+                });
+
+                debugLog.innerText = "CORE READY";
+                initBtn.style.display = 'none';
+                closeBtn.style.display = 'block';
+                scanLoop();
+            } catch (err) {
+                debugLog.innerText = "ERROR: " + err.message;
+                console.error(err);
+            }
+        };
+
+        closeBtn.onclick = () => {
+            settingsTab.classList.add('hidden');
+            setTimeout(() => map.invalidateSize(), 400);
+        };
+
+        document.getElementById('gear-btn').onclick = () => {
+            settingsTab.classList.remove('hidden');
+        };
+
+        async function scanLoop() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA && !isBusy) {
+                isBusy = true;
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 300; canvas.height = 80;
+                
+                // Crop middle of video
+                ctx.filter = 'contrast(500%) grayscale(100%)';
+                ctx.drawImage(video, video.videoWidth/4, video.videoHeight/2 - 40, video.videoWidth/2, 80, 0, 0, 300, 80);
+                
+                const { data: { text } } = await worker.recognize(canvas);
+                processData(text.trim());
+                isBusy = false;
+            }
+            requestAnimationFrame(scanLoop);
+        }
+
+        function processData(text) {
+            let sanitized = text.replace(/[^0-9.\- ]/g, '');
+            const matches = sanitized.match(/-?\d+\.\d+/g);
+            
+            if (matches && matches.length >= 2) {
+                let lat = parseFloat(matches[0]);
+                let lng = parseFloat(matches[1]);
+                coordDisplay.innerText = lat + ", " + lng;
+
+                if (sanitized === lastResult) stability += 20;
+                else { stability = 10; lastResult = sanitized; }
+
+                if (stability >= 100) {
+                    marker.setLatLng([lat, lng]);
+                    map.panTo([lat, lng]);
+                    stability = 0;
+                }
+            } else {
+                stability = Math.max(0, stability - 5);
+            }
+            stabFill.style.width = stability + "%";
+        }
+    </script>
+</body>
+</html>
