@@ -3,43 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPS v1.8.5 TOTAL-RECALL</title>
+    <title>GPS v1.8.10 SHIELD-BREAKER</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #00ff00; }
-        body, html { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; height: 100%; width: 100%; overflow: hidden; }
+        :root { --accent: #00ff00; --err: #ff4444; }
+        body, html { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; height: 100dvh; width: 100vw; overflow: hidden; display: flex; flex-direction: column; }
         
-        /* THE GHOST FIX: This layer now sits on top of EVERYTHING */
         #settings-tab { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #000; z-index: 999999; /* Overrides all Leaflet layers */
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.95); z-index: 99999; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            pointer-events: all; /* Forces it to accept touches */
         }
         #settings-tab.hidden { display: none !important; }
         
-        .status-box { border: 2px solid var(--accent); padding: 40px 20px; border-radius: 15px; text-align: center; width: 85%; background: #111; }
-        .perm-btn { background: var(--accent); color: #000; border: none; padding: 25px; width: 100%; font-weight: bold; font-size: 20px; border-radius: 10px; cursor: pointer; }
+        .status-box { border: 2px solid var(--accent); padding: 30px; border-radius: 15px; text-align: center; width: 85%; max-width: 400px; background: #111; }
+        .perm-btn { background: var(--accent); color: #000; border: none; padding: 20px; width: 100%; font-weight: bold; font-size: 18px; border-radius: 10px; cursor: pointer; }
 
-        #video-container { position: relative; height: 35vh; background: #000; z-index: 5; }
+        #video-container { position: relative; height: 35vh; background: #000; flex-shrink: 0; }
         video { width: 100%; height: 100%; object-fit: cover; }
-        .focus-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 80px; border: 2px solid var(--accent); box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; }
+        .focus-box { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            width: 280px; height: 80px; border: 2px solid var(--accent); 
+            box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.7); pointer-events: none; 
+        }
 
-        #controls { padding: 15px; background: #111; text-align: center; border-bottom: 1px solid #333; z-index: 10; position: relative; }
-        #coords { font-size: 24px; color: var(--accent); font-weight: bold; }
-        #stab-bar-wrap { width: 100%; height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin-top: 10px; border: 1px solid #444; }
-        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
+        #controls { padding: 15px; background: #111; text-align: center; border-bottom: 1px solid #333; }
+        #coords { font-size: 22px; color: var(--accent); font-weight: bold; min-height: 28px; }
+        #stab-bar-wrap { width: 100%; height: 10px; background: #222; border-radius: 5px; overflow: hidden; margin-top: 10px; border: 1px solid #444; }
+        #stab-bar-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease; }
 
-        #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        #debug-log { color: #888; margin-top: 20px; font-size: 12px; }
+        #map { flex: 1; width: 100%; z-index: 1; }
+        #debug-log { color: #888; margin-top: 15px; font-size: 11px; text-transform: uppercase; line-height: 1.4; }
     </style>
 </head>
 <body>
 
     <div id="settings-tab">
-        <div class="status-box" id="click-zone">
-            <h1 style="color:var(--accent); margin-bottom:10px;">CORE v1.8.5</h1>
-            <p id="debug-log">TAP ANYWHERE TO BOOT</p>
+        <div class="status-box">
+            <h1 style="color:var(--accent); margin:0;">GPS CORE v1.8.10</h1>
+            <p id="debug-log">STATUS: WAITING FOR USER</p>
             <button class="perm-btn" id="init-btn">INITIALIZE CORE</button>
         </div>
     </div>
@@ -50,9 +52,9 @@
     </div>
 
     <div id="controls">
-        <div id="coords">WAITING...</div>
+        <div id="coords">SEARCHING...</div>
         <div id="stab-bar-wrap"><div id="stab-bar-fill"></div></div>
-        <div style="font-size: 10px; color: #555; margin-top: 5px;">DATA STABILIZATION</div>
+        <div id="stab-label" style="font-size: 9px; color: #555; margin-top: 5px; font-weight: bold;">DATA STABILIZATION: IDLE</div>
     </div>
 
     <div id="map"></div>
@@ -66,31 +68,30 @@
         const debugLog = document.getElementById('debug-log');
         const settingsTab = document.getElementById('settings-tab');
         const stabFill = document.getElementById('stab-bar-fill');
+        const stabLabel = document.getElementById('stab-label');
         const coordDisplay = document.getElementById('coords');
 
         let worker, map, marker;
         let stability = 0, lastResult = "", isBusy = false;
 
-        // Map setup
+        // Leaflet Setup
         map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         marker = L.marker([0, 0]).addTo(map);
 
-        // GLOBAL CLICK HANDLER (Bypasses any button hit-box issues)
-        settingsTab.addEventListener('click', async () => {
-            if (initBtn.disabled) return;
-            
+        initBtn.onclick = async () => {
             initBtn.disabled = true;
-            initBtn.innerText = "OPENING CAMERA...";
-            debugLog.innerText = "COMMAND RECEIVED. PROBING...";
+            initBtn.innerText = "OPENING LENS...";
+            debugLog.innerText = "ATTEMPTING HANDSHAKE...";
 
             try {
+                // BRAVE 2026: Mandatory User Gesture + Camera Claim
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment" } 
+                    video: { facingMode: "environment", width: { ideal: 1280 } } 
                 });
                 
                 video.srcObject = stream;
-                await video.play();
+                await video.play(); 
                 
                 debugLog.innerText = "CAMERA ACTIVE. LOADING AI...";
                 worker = await Tesseract.createWorker();
@@ -101,28 +102,45 @@
                     tessedit_pageseg_mode: '7'
                 });
 
-                debugLog.innerText = "STABILIZED";
+                debugLog.innerText = "SYSTEM STABILIZED";
                 settingsTab.classList.add('hidden');
                 scanLoop();
             } catch (err) {
                 console.error(err);
                 debugLog.innerText = "FAILED: " + err.name;
+                debugLog.style.color = "var(--err)";
                 initBtn.disabled = false;
                 initBtn.innerText = "RETRY INITIALIZE";
-                alert("BRAVE ALERT: Please check Site Settings > Autoplay & Camera.");
+                
+                if (err.name === "NotAllowedError") {
+                    alert("BRAVE SHIELD DETECTED:\n1. Settings > Shields & Privacy\n2. Fingerprinting Block > OFF\n3. Restart App");
+                }
             }
-        });
+        };
 
         async function scanLoop() {
             if (video.readyState === video.HAVE_ENOUGH_DATA && !isBusy) {
                 isBusy = true;
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                canvas.width = 600; canvas.height = 120;
-                ctx.filter = 'grayscale(1) contrast(800%) brightness(0.9)';
-                ctx.drawImage(video, video.videoWidth/4, video.videoHeight/2 - 60, video.videoWidth/2, 120, 0, 0, 600, 120);
-                const { data: { text } } = await worker.recognize(canvas);
-                processData(text.trim());
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = 600; canvas.height = 120;
+                    
+                    // Pre-processing for precision
+                    ctx.filter = 'grayscale(1) contrast(800%) brightness(0.9)';
+                    const sx = video.videoWidth / 4;
+                    const sy = (video.videoHeight / 2) - 60;
+                    ctx.drawImage(video, sx, sy, video.videoWidth / 2, 120, 0, 0, 600, 120);
+                    
+                    // SHIELD TEST: Read pixel data (will throw error if fingerprinting is ON)
+                    ctx.getImageData(0, 0, 1, 1);
+                    
+                    const { data: { text } } = await worker.recognize(canvas);
+                    processData(text.trim());
+                } catch (e) {
+                    coordDisplay.innerText = "SHIELD INTERFERENCE";
+                    coordDisplay.style.color = "var(--err)";
+                }
                 isBusy = false;
             }
             requestAnimationFrame(scanLoop);
@@ -131,21 +149,38 @@
         function processData(text) {
             let sanitized = text.replace(/[^0-9.\- NSEW]/g, '').trim();
             const matches = sanitized.match(/-?\d+\.\d+/g);
+            
             if (matches && matches.length >= 2) {
-                let lat = parseFloat(matches[0]), lng = parseFloat(matches[1]);
+                let lat = parseFloat(matches[0]);
+                let lng = parseFloat(matches[1]);
+
                 if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
                     if (sanitized.includes('S') && lat > 0) lat *= -1;
                     if (sanitized.includes('W') && lng > 0) lng *= -1;
+
                     coordDisplay.innerText = lat.toFixed(5) + ", " + lng.toFixed(5);
-                    if (sanitized === lastResult) stability = Math.min(100, stability + 20);
-                    else { stability = 10; lastResult = sanitized; }
+                    coordDisplay.style.color = "var(--accent)";
+
+                    // STABILIZATION LOGIC
+                    if (sanitized === lastResult) {
+                        stability = Math.min(100, stability + 15);
+                        stabLabel.innerText = "DATA STABILIZATION: LOCKING...";
+                    } else {
+                        stability = 10;
+                        lastResult = sanitized;
+                        stabLabel.innerText = "DATA STABILIZATION: SCANNING...";
+                    }
+
                     if (stability >= 100) {
                         marker.setLatLng([lat, lng]);
                         map.panTo([lat, lng]);
                         stability = 0;
+                        stabLabel.innerText = "DATA STABILIZATION: POSITION SYNCED";
                     }
                 }
-            } else { stability = Math.max(0, stability - 5); }
+            } else {
+                stability = Math.max(0, stability - 5);
+            }
             stabFill.style.width = stability + "%";
         }
     </script>
